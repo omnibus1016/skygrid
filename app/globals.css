@@ -389,6 +389,8 @@ button {
 .map-context-menu {
   position: absolute;
   z-index: 20;
+  display: block;
+  pointer-events: auto;
   min-width: 190px;
   margin: 0;
   padding: 6px;
@@ -948,6 +950,7 @@ button {
   font-family: var(--font-geist-sans), sans-serif;
 }
 .tactical-map.interaction-add-waypoint,
+.tactical-map.interaction-add-drone,
 .tactical-map.interaction-move-drone {
   cursor: crosshair;
 }

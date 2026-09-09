@@ -1405,6 +1405,17 @@ export default function SkygridApp() {
               </button>
               <button
                 type="button"
+                className={`map-tool ${interaction === 'add-drone' ? 'active' : ''}`}
+                onClick={() =>
+                  setInteraction(
+                    interaction === 'add-drone' ? 'inspect' : 'add-drone',
+                  )
+                }
+              >
+                <Satellite /> 기체 추가
+              </button>
+              <button
+                type="button"
                 className="map-tool danger"
                 onClick={deleteSelectedWaypoint}
                 disabled={!selectedWaypoint || mission.waypoints.length <= 1}
@@ -1457,9 +1468,11 @@ export default function SkygridApp() {
           />
 
           {mapContextMenu && mode !== 'analysis' && (
-            <dialog
-              open
+            <div
               className="map-context-menu"
+              role="menu"
+              aria-label="지도 편집 메뉴"
+              onContextMenu={(event) => event.preventDefault()}
               style={{ left: mapContextMenu.x, top: mapContextMenu.y }}
             >
               <div className="map-context-title">
@@ -1550,7 +1563,7 @@ export default function SkygridApp() {
               >
                 닫기
               </button>
-            </dialog>
+            </div>
           )}
 
           <Dialog open={droneStatusOpen} onOpenChange={setDroneStatusOpen}>
