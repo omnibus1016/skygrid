@@ -340,9 +340,11 @@ export function advanceMission(
   } else {
     next = { ...next, drones, waypoints };
   }
+  const completed = next.time >= 600 || active.length === 0;
   return {
     ...next,
-    completed: next.time >= 600 || active.length === 0,
+    completed,
+    running: completed ? false : next.running,
     weightedGapSeconds:
       next.weightedGapSeconds + weightedGapRate * deltaSeconds,
     events: [...visitEvents.reverse(), ...next.events].slice(0, 18),

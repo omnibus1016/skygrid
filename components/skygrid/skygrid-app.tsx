@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   StepForward,
+  TimerReset,
   Trash2,
   Upload,
   Zap,
@@ -122,6 +123,13 @@ const PLANNER_LABEL: Record<PlannerKind, string> = {
   priority: '중요도 우선',
 };
 
+type MapContextMenu = {
+  x: number;
+  y: number;
+  point: GeoPoint;
+  waypointId?: string;
+};
+
 function MetricCard({
   icon,
   label,
@@ -179,6 +187,9 @@ export default function SkygridApp() {
   const [dropoutDroneId, setDropoutDroneId] = useState('UAV-02');
   const [dropoutReason, setDropoutReason] = useState('통신 두절');
   const [mapBase, setMapBase] = useState<'satellite' | 'street'>('satellite');
+  const [mapContextMenu, setMapContextMenu] = useState<MapContextMenu | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const metrics = useMemo(() => missionMetrics(mission), [mission]);
@@ -364,54 +375,62 @@ export default function SkygridApp() {
     }));
   }, [config, policyBundle.policy]);
 
+  const addWaypointAt = useCallback(
+    (point: GeoPoint) => {
+      const nextNumber =
+        Math.max(
+          0,
+          ...mission.waypoints.map((waypoint) =>
+            Number.parseInt(waypoint.id.replace(/\D/g, ''), 10),
+          ),
+        ) + 1;
+      const waypointId = `RP-${String(nextNumber).padStart(2, '0')}`;
+      setSelectedWaypointId(waypointId);
+      setMission((current) => {
+        const waypoint: Waypoint = {
+          id: waypointId,
+          ...point,
+          priority: 4,
+          revisitSec: 150,
+          dwellSec: 8,
+          lastVisited: current.time - 151,
+          visitedCount: 0,
+        };
+        const waypoints = [...current.waypoints, waypoint];
+        const planned = assignRoutes(
+          current.drones,
+          waypoints,
+          current.time,
+          config.planner,
+          policyBundle.policy,
+        );
+        return {
+          ...current,
+          drones: planned.drones,
+          waypoints: planned.waypoints,
+          replanCount: current.replanCount + 1,
+          events: [
+            {
+              id: `waypoint-add-${Date.now()}`,
+              time: current.time,
+              kind: 'replan' as const,
+              title: `${waypoint.id} 정찰지점 추가`,
+              detail: '새 지점을 포함하여 AI 경로를 다시 계산했습니다.',
+            },
+            ...current.events,
+          ].slice(0, 18),
+        };
+      });
+      setInteraction('inspect');
+      setMapContextMenu(null);
+    },
+    [mission.waypoints, config.planner, policyBundle.policy],
+  );
+
   const handleMapClick = useCallback(
     (point: GeoPoint) => {
       if (interaction === 'add-waypoint') {
-        const nextNumber =
-          Math.max(
-            0,
-            ...mission.waypoints.map((waypoint) =>
-              Number.parseInt(waypoint.id.replace(/\D/g, ''), 10),
-            ),
-          ) + 1;
-        const waypointId = `RP-${String(nextNumber).padStart(2, '0')}`;
-        setSelectedWaypointId(waypointId);
-        setMission((current) => {
-          const waypoint: Waypoint = {
-            id: waypointId,
-            ...point,
-            priority: 4,
-            revisitSec: 150,
-            dwellSec: 8,
-            lastVisited: current.time,
-            visitedCount: 0,
-          };
-          const waypoints = [...current.waypoints, waypoint];
-          const planned = assignRoutes(
-            current.drones,
-            waypoints,
-            current.time,
-            config.planner,
-            policyBundle.policy,
-          );
-          return {
-            ...current,
-            drones: planned.drones,
-            waypoints: planned.waypoints,
-            replanCount: current.replanCount + 1,
-            events: [
-              {
-                id: `waypoint-add-${Date.now()}`,
-                time: current.time,
-                kind: 'replan' as const,
-                title: `${waypoint.id} 정찰지점 추가`,
-                detail: '새 지점을 포함하여 AI 경로를 다시 계산했습니다.',
-              },
-              ...current.events,
-            ].slice(0, 18),
-          };
-        });
-        setInteraction('inspect');
+        addWaypointAt(point);
       } else if (interaction === 'move-drone' && selectedDroneId) {
         setMission((current) => {
           const drones = current.drones.map((drone) =>
@@ -447,52 +466,93 @@ export default function SkygridApp() {
     [
       interaction,
       selectedDroneId,
-      mission.waypoints,
+      addWaypointAt,
       config.planner,
       policyBundle.policy,
     ],
   );
 
+  const deleteWaypointById = useCallback(
+    (waypointId: string) => {
+      if (!waypointId || mission.waypoints.length <= 1) return;
+      setSelectedWaypointId(
+        mission.waypoints.find((waypoint) => waypoint.id !== waypointId)?.id ??
+          '',
+      );
+      setMission((current) => {
+        const waypoints = current.waypoints.filter(
+          (waypoint) => waypoint.id !== waypointId,
+        );
+        const planned = assignRoutes(
+          current.drones,
+          waypoints,
+          current.time,
+          config.planner,
+          policyBundle.policy,
+        );
+        return {
+          ...current,
+          drones: planned.drones,
+          waypoints: planned.waypoints,
+          replanCount: current.replanCount + 1,
+          events: [
+            {
+              id: `waypoint-delete-${Date.now()}`,
+              time: current.time,
+              kind: 'warning' as const,
+              title: `${waypointId} 정찰지점 삭제`,
+              detail: '남은 정찰지점으로 경로를 다시 계산했습니다.',
+            },
+            ...current.events,
+          ].slice(0, 18),
+        };
+      });
+      setMapContextMenu(null);
+    },
+    [mission.waypoints, config.planner, policyBundle.policy],
+  );
+
   const deleteSelectedWaypoint = useCallback(() => {
-    if (!selectedWaypointId || mission.waypoints.length <= 1) return;
-    setSelectedWaypointId(
-      mission.waypoints.find((waypoint) => waypoint.id !== selectedWaypointId)
-        ?.id ?? '',
-    );
-    setMission((current) => {
-      const waypoints = current.waypoints.filter(
-        (waypoint) => waypoint.id !== selectedWaypointId,
-      );
-      const planned = assignRoutes(
-        current.drones,
-        waypoints,
-        current.time,
-        config.planner,
-        policyBundle.policy,
-      );
-      return {
-        ...current,
-        drones: planned.drones,
-        waypoints: planned.waypoints,
-        replanCount: current.replanCount + 1,
-        events: [
-          {
-            id: `waypoint-delete-${Date.now()}`,
-            time: current.time,
-            kind: 'warning' as const,
-            title: `${selectedWaypointId} 정찰지점 삭제`,
-            detail: '남은 정찰지점으로 경로를 다시 계산했습니다.',
-          },
-          ...current.events,
-        ].slice(0, 18),
-      };
-    });
-  }, [
-    selectedWaypointId,
-    mission.waypoints,
-    config.planner,
-    policyBundle.policy,
-  ]);
+    if (selectedWaypointId) deleteWaypointById(selectedWaypointId);
+  }, [selectedWaypointId, deleteWaypointById]);
+
+  const handleMapContextMenu = useCallback(
+    (
+      point: GeoPoint,
+      position: { x: number; y: number },
+      waypointId?: string,
+    ) => {
+      if (waypointId) setSelectedWaypointId(waypointId);
+      setMapContextMenu({ ...position, point, waypointId });
+    },
+    [],
+  );
+
+  const closeMapContextMenu = useCallback(() => {
+    setMapContextMenu(null);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+      if (
+        !isTyping &&
+        mode !== 'analysis' &&
+        selectedWaypointId &&
+        (event.key === 'Backspace' || event.key === 'Delete')
+      ) {
+        event.preventDefault();
+        deleteSelectedWaypoint();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteSelectedWaypoint, mode, selectedWaypointId]);
 
   const reportWaypointVisit = useCallback(() => {
     if (!selectedWaypointId) return;
@@ -779,7 +839,7 @@ export default function SkygridApp() {
           </div>
           <div>
             <div className="brand-name">SKYGRID</div>
-            <div className="brand-sub">UAS MISSION CONTINUITY SYSTEM</div>
+            <div className="brand-sub">군집 무인기 임무 연속성 실험</div>
           </div>
         </div>
         <Tabs
@@ -802,10 +862,10 @@ export default function SkygridApp() {
         <div className="header-status">
           <Badge className="system-badge">
             <span className="status-pulse" />{' '}
-            {mission.running ? 'MISSION ACTIVE' : 'SYSTEM READY'}
+            {mission.running ? '임무 진행 중' : '대기'}
           </Badge>
           <div className="scenario-select" aria-label="현재 시나리오">
-            SCN-{String(config.randomSeed).slice(-2)} / 임무 연속성 검증
+            시나리오 {String(config.randomSeed).slice(-2)} · 임무 연속성
           </div>
         </div>
       </header>
@@ -816,7 +876,7 @@ export default function SkygridApp() {
             <>
               <div className="rail-section">
                 <div className="section-heading">
-                  <span>SIMULATION CONTROL</span>
+                  <span>가상 실험</span>
                   <span>{formatMissionTime(mission.time)}</span>
                 </div>
                 <div className="button-pair">
@@ -855,7 +915,7 @@ export default function SkygridApp() {
 
               <div className="rail-section parameter-panel">
                 <div className="section-heading">
-                  <span>EXPERIMENT SETUP</span>
+                  <span>실험 조건</span>
                   <SlidersHorizontal size={14} />
                 </div>
                 <ParameterSlider
@@ -952,13 +1012,13 @@ export default function SkygridApp() {
             <>
               <div className="rail-section">
                 <div className="section-heading">
-                  <span>FIELD MISSION</span>
+                  <span>현장 임무 기록</span>
                   <span>{formatMissionTime(mission.time)}</span>
                 </div>
                 <div className="button-pair">
                   <Button className="primary-command" onClick={toggleMission}>
                     {mission.running ? <Pause /> : <Play />}
-                    {mission.running ? '임무 정지' : '임무 개시'}
+                    {mission.running ? '기록 정지' : '기록 시작'}
                   </Button>
                   <Button
                     variant="outline"
@@ -985,53 +1045,11 @@ export default function SkygridApp() {
                 onExecute={executeDropout}
               />
 
-              <div className="rail-section">
-                <div className="section-heading">
-                  <span>MAP INPUT</span>
-                  <LocateFixed size={14} />
-                </div>
-                <div className="button-stack">
-                  <Button
-                    variant={
-                      interaction === 'add-waypoint' ? 'default' : 'outline'
-                    }
-                    className="justify-start"
-                    onClick={() =>
-                      setInteraction(
-                        interaction === 'add-waypoint'
-                          ? 'inspect'
-                          : 'add-waypoint',
-                      )
-                    }
-                  >
-                    <MapPinPlus /> 지도에서 정찰지점 추가
-                  </Button>
-                  <Button
-                    variant={
-                      interaction === 'move-drone' ? 'default' : 'outline'
-                    }
-                    className="justify-start"
-                    onClick={() =>
-                      setInteraction(
-                        interaction === 'move-drone' ? 'inspect' : 'move-drone',
-                      )
-                    }
-                  >
-                    <LocateFixed /> 선택 기체 위치 지정
-                  </Button>
-                </div>
-                {interaction !== 'inspect' && (
-                  <div className="inline-notice">
-                    <CircleDot /> 지도에서 위치를 한 번 클릭하십시오.
-                  </div>
-                )}
-              </div>
-
               {selectedDrone && (
                 <div className="rail-section">
                   <div className="section-heading">
-                    <span>AIRCRAFT STATUS INPUT</span>
-                    <span>{mission.drones.length} AIRCRAFT</span>
+                    <span>기체 상태</span>
+                    <span>{mission.drones.length}대</span>
                   </div>
                   <div className="aircraft-selector">
                     {mission.drones.map((drone) => (
@@ -1111,8 +1129,8 @@ export default function SkygridApp() {
             <>
               <div className="rail-section">
                 <div className="section-heading">
-                  <span>FLIGHT RECORDS</span>
-                  <span>{logs.length} FILES</span>
+                  <span>비행 로그</span>
+                  <span>{logs.length}개 로그</span>
                 </div>
                 <div className="button-stack">
                   <Button
@@ -1143,7 +1161,7 @@ export default function SkygridApp() {
               </div>
               <div className="rail-section flex-1">
                 <div className="section-heading">
-                  <span>LOG INVENTORY</span>
+                  <span>로그 목록</span>
                   <FileChartColumn size={14} />
                 </div>
                 <div className="log-list">
@@ -1235,10 +1253,10 @@ export default function SkygridApp() {
               <div className="map-mode-label">
                 <span className="status-pulse" />
                 {mode === 'field'
-                  ? 'FIELD ASSIST'
+                  ? '현장 입력'
                   : mode === 'analysis'
-                    ? 'LOG REPLAY'
-                    : 'MISSION SIM'}
+                    ? '로그 재생'
+                    : '가상 실험'}
               </div>
             </div>
           </div>
@@ -1269,7 +1287,18 @@ export default function SkygridApp() {
                 className="map-tool"
                 onClick={() => replanNow()}
               >
-                <BrainCircuit /> 전체 경로 재계산
+                <BrainCircuit /> 경로 재계산
+              </button>
+              <button
+                type="button"
+                className={`map-tool ${interaction === 'move-drone' ? 'active' : ''}`}
+                onClick={() =>
+                  setInteraction(
+                    interaction === 'move-drone' ? 'inspect' : 'move-drone',
+                  )
+                }
+              >
+                <LocateFixed /> 기체 위치 지정
               </button>
               {interaction !== 'inspect' && (
                 <span className="map-click-guide">
@@ -1288,40 +1317,85 @@ export default function SkygridApp() {
             selectedWaypointId={selectedWaypointId}
             interaction={interaction}
             onMapClick={handleMapClick}
+            onMapContextMenu={handleMapContextMenu}
             onSelectDrone={setSelectedDroneId}
             onSelectWaypoint={setSelectedWaypointId}
           />
 
+          {mapContextMenu && mode !== 'analysis' && (
+            <dialog
+              open
+              className="map-context-menu"
+              style={{ left: mapContextMenu.x, top: mapContextMenu.y }}
+            >
+              <div className="map-context-title">
+                {mapContextMenu.waypointId
+                  ? `${mapContextMenu.waypointId} 지점 메뉴`
+                  : '지도 위치 메뉴'}
+              </div>
+              {mapContextMenu.waypointId ? (
+                <>
+                  <button type="button" onClick={closeMapContextMenu}>
+                    <CheckCircle2 /> 선택 지점 편집
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() =>
+                      deleteWaypointById(mapContextMenu.waypointId ?? '')
+                    }
+                  >
+                    <Trash2 /> 정찰지점 삭제
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => addWaypointAt(mapContextMenu.point)}
+                >
+                  <MapPinPlus /> 이 위치에 정찰지점 등록
+                </button>
+              )}
+              <button
+                type="button"
+                className="subtle"
+                onClick={closeMapContextMenu}
+              >
+                닫기
+              </button>
+            </dialog>
+          )}
+
           <div className="map-footer">
             <div>
-              <span>MISSION TIME</span>
+              <span>임무 시간</span>
               <strong>
                 {formatMissionTime(mission.time)}.
                 {Math.floor((mission.time % 1) * 10)}
               </strong>
             </div>
             <div>
-              <span>ACTIVE / TOTAL</span>
+              <span>활성 / 전체</span>
               <strong>
                 {metrics.activeDrones} / {mission.drones.length}
               </strong>
             </div>
             <div>
-              <span>AI INFERENCE</span>
+              <span>AI 계산</span>
               <strong>
                 {mission.inferenceMs
                   ? `${mission.inferenceMs.toFixed(1)} ms`
-                  : 'STANDBY'}
+                  : '대기'}
               </strong>
             </div>
             <div>
-              <span>POSITION SOURCE</span>
+              <span>위치 출처</span>
               <strong>
                 {mode === 'analysis'
-                  ? 'DJI LOG'
+                  ? 'DJI 로그'
                   : mode === 'field'
-                    ? 'OPERATOR INPUT'
-                    : 'SIMULATED'}
+                    ? '운용자 입력'
+                    : '가상'}
               </strong>
             </div>
           </div>
@@ -1340,8 +1414,14 @@ export default function SkygridApp() {
             <>
               <div className="rail-section">
                 <div className="section-heading">
-                  <span>MISSION EFFECT</span>
-                  <span>{mission.running ? 'LIVE' : 'READY'}</span>
+                  <span>임무 결과</span>
+                  <span>
+                    {mission.completed
+                      ? '종료'
+                      : mission.running
+                        ? '진행 중'
+                        : '대기'}
+                  </span>
                 </div>
                 <div className="metric-hero">
                   <div
@@ -1395,6 +1475,16 @@ export default function SkygridApp() {
                     tone={metrics.weightedGapSeconds > 100 ? 'amber' : 'cyan'}
                   />
                   <MetricCard
+                    icon={<TimerReset />}
+                    label="공백 회복"
+                    value={
+                      metrics.recoverySeconds === null
+                        ? '—'
+                        : `${metrics.recoverySeconds.toFixed(0)} 초`
+                    }
+                    tone={metrics.recoverySeconds !== null ? 'cyan' : 'amber'}
+                  />
+                  <MetricCard
                     icon={<Gauge />}
                     label="누적 거리"
                     value={`${metrics.totalDistanceKm.toFixed(2)} km`}
@@ -1413,13 +1503,21 @@ export default function SkygridApp() {
                 </div>
               </div>
 
-              <div className="rail-section">
-                <div className="section-heading">
-                  <span>AI POLICY</span>
+              {mode === 'simulation' && (
+                <ComparisonRail
+                  results={batchResults}
+                  onRun={runBatch}
+                  busy={busyAction === 'batch'}
+                />
+              )}
+
+              <details className="rail-section secondary-panel">
+                <summary className="section-heading secondary-summary">
+                  <span>AI 학습 상태</span>
                   <span className="text-cyan-300">
-                    {busyAction === 'train' ? 'TRAINING' : 'ONLINE'}
+                    {busyAction === 'train' ? '학습 중' : '대기'}
                   </span>
-                </div>
+                </summary>
                 <div className="policy-card">
                   <div className="flex items-start justify-between">
                     <div>
@@ -1471,7 +1569,7 @@ export default function SkygridApp() {
                         />
                       </AreaChart>
                     </ResponsiveContainer>
-                    <span>EPISODIC REWARD</span>
+                    <span>학습 보상 추이</span>
                   </div>
                   <div className="confidence">
                     <span>학습 에피소드</span>
@@ -1505,12 +1603,12 @@ export default function SkygridApp() {
                     ? '정책 학습 중'
                     : '1,000 에피소드 정책 재학습'}
                 </Button>
-              </div>
+              </details>
 
-              {mode === 'field' ? (
+              {mode === 'field' && (
                 <div className="rail-section flex-1">
                   <div className="section-heading">
-                    <span>AI RECOMMENDATION</span>
+                    <span>다음 정찰 경로</span>
                     <span>{selectedDrone?.id}</span>
                   </div>
                   <div className="route-order">
@@ -1527,7 +1625,7 @@ export default function SkygridApp() {
                           {mission.waypoints.find(
                             (waypoint) => waypoint.id === id,
                           )?.priority ?? 0}{' '}
-                          PRI
+                          중요도
                         </i>
                       </div>
                     ))}
@@ -1538,8 +1636,8 @@ export default function SkygridApp() {
                     )}
                   </div>
                   <div className="section-heading mt-4">
-                    <span>POLICY Q-RANK</span>
-                    <span>TOP 4</span>
+                    <span>정찰 우선순위</span>
+                    <span>상위 4개</span>
                   </div>
                   <div className="q-rank">
                     {candidateScores.map(({ waypoint, score }, index) => (
@@ -1558,18 +1656,12 @@ export default function SkygridApp() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                <ComparisonRail
-                  results={batchResults}
-                  onRun={runBatch}
-                  busy={busyAction === 'batch'}
-                />
               )}
 
               <div className="rail-section event-section">
                 <div className="section-heading">
-                  <span>EVENT LOG</span>
-                  <span>{mission.events.length} EVENTS</span>
+                  <span>최근 기록</span>
+                  <span>{mission.events.length}건</span>
                 </div>
                 <ol className="event-list">
                   {mission.events.slice(0, 5).map((event) => (
@@ -1619,7 +1711,7 @@ function DropoutControl({
   return (
     <div className="rail-section dropout-control">
       <div className="section-heading">
-        <span>AIRCRAFT DROPOUT</span>
+        <span>기체 이탈 입력</span>
         <AlertTriangle size={14} />
       </div>
       <div className="dropout-fields">
@@ -1721,7 +1813,7 @@ function WaypointEditor({
   return (
     <div className="rail-section">
       <div className="section-heading">
-        <span>RECON POINT</span>
+        <span>선택한 정찰지점</span>
         <span className="text-cyan-300">{selected.id}</span>
       </div>
       <ParameterSlider
@@ -1785,8 +1877,8 @@ function ComparisonRail({
   return (
     <div className="rail-section comparison-section">
       <div className="section-heading">
-        <span>MONTE CARLO / 100 RUNS</span>
-        <span>3 POLICIES</span>
+        <span>운용 방식 비교</span>
+        <span>100회 반복</span>
       </div>
       <div className="comparison-chart">
         <ResponsiveContainer
@@ -1879,8 +1971,8 @@ function AnalysisRail({
     <>
       <div className="rail-section">
         <div className="section-heading">
-          <span>FLIGHT SUMMARY</span>
-          <span>{selectedLog ? 'VALID' : 'NO DATA'}</span>
+          <span>비행 요약</span>
+          <span>{selectedLog ? '데이터 확인' : '데이터 없음'}</span>
         </div>
         {metrics ? (
           <>
@@ -1936,7 +2028,7 @@ function AnalysisRail({
       </div>
       <div className="rail-section chart-section">
         <div className="section-heading">
-          <span>TELEMETRY</span>
+          <span>비행 데이터</span>
           <span>{selectedLog?.fileName ?? '—'}</span>
         </div>
         <div className="telemetry-chart">
@@ -2011,14 +2103,14 @@ function AnalysisRail({
       </div>
       <div className="rail-section">
         <div className="section-heading">
-          <span>MISSION VALIDATION</span>
+          <span>임무 검증</span>
           <ShieldCheck size={14} />
         </div>
         <div className="validation-score">
           <span>
             {logs.length >= 2 ? '2-기체 로그 정합' : '추가 로그 필요'}
           </span>
-          <strong>{logs.length >= 2 ? 'PASS' : 'WAIT'}</strong>
+          <strong>{logs.length >= 2 ? '검증 완료' : '대기'}</strong>
         </div>
         <dl className="analysis-data">
           <div>

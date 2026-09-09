@@ -32,12 +32,32 @@ interface OperationalMapProps {
   selectedWaypointId: string;
   interaction: 'inspect' | 'add-waypoint' | 'move-drone';
   onMapClick: (point: GeoPoint) => void;
+  onMapContextMenu: (
+    point: GeoPoint,
+    position: { x: number; y: number },
+    waypointId?: string,
+  ) => void;
   onSelectDrone: (id: string) => void;
   onSelectWaypoint: (id: string) => void;
 }
 
-function MapClick({ onClick }: { onClick: (point: GeoPoint) => void }) {
-  useMapEvents({ click: (event) => onClick(event.latlng) });
+function MapClick({
+  onClick,
+  onContextMenu,
+}: {
+  onClick: (point: GeoPoint) => void;
+  onContextMenu: (point: GeoPoint, position: { x: number; y: number }) => void;
+}) {
+  useMapEvents({
+    click: (event) => onClick(event.latlng),
+    contextmenu: (event) => {
+      event.originalEvent.preventDefault();
+      onContextMenu(event.latlng, {
+        x: event.containerPoint.x,
+        y: event.containerPoint.y,
+      });
+    },
+  });
   return null;
 }
 
@@ -88,6 +108,7 @@ export default function OperationalMap({
   selectedWaypointId,
   interaction,
   onMapClick,
+  onMapContextMenu,
   onSelectDrone,
   onSelectWaypoint,
 }: OperationalMapProps) {
@@ -164,7 +185,7 @@ export default function OperationalMap({
         />
       )}
       {viewportBounds && <MapViewport {...viewportBounds} />}
-      <MapClick onClick={onMapClick} />
+      <MapClick onClick={onMapClick} onContextMenu={onMapContextMenu} />
 
       {mission.noFlyZones.map((zone) => (
         <Polygon
@@ -227,7 +248,21 @@ export default function OperationalMap({
               fillOpacity: 0.9,
               weight: selected ? 3 : 1.5,
             }}
-            eventHandlers={{ click: () => onSelectWaypoint(waypoint.id) }}
+            eventHandlers={{
+              click: () => onSelectWaypoint(waypoint.id),
+              contextmenu: (event) => {
+                event.originalEvent.preventDefault();
+                event.originalEvent.stopPropagation();
+                onMapContextMenu(
+                  waypoint,
+                  {
+                    x: event.containerPoint.x,
+                    y: event.containerPoint.y,
+                  },
+                  waypoint.id,
+                );
+              },
+            }}
           >
             <Tooltip
               direction="top"
