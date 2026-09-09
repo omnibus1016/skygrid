@@ -1480,14 +1480,23 @@ export default function SkygridApp() {
                 } as React.CSSProperties
               }
             >
-              <div className="map-context-title">
-                {mapContextMenu.droneId
-                  ? `${mapContextMenu.droneId} 기체 메뉴`
-                  : mapContextMenu.waypointId
-                    ? `${mapContextMenu.waypointId} 지점 메뉴`
-                    : '지도 위치 메뉴'}
-              </div>
-              {mapContextMenu.droneId ? (
+              <div className="map-context-title">이 위치에 추가</div>
+              <button
+                type="button"
+                onClick={() => addWaypointAt(mapContextMenu.point)}
+              >
+                <MapPinPlus /> 정찰 포인트 추가
+              </button>
+              <button
+                type="button"
+                onClick={() => addDroneAt(mapContextMenu.point)}
+              >
+                <Satellite /> 드론 추가
+              </button>
+              {(mapContextMenu.droneId || mapContextMenu.waypointId) && (
+                <div className="map-context-divider" />
+              )}
+              {mapContextMenu.droneId && (
                 <>
                   <button
                     type="button"
@@ -1497,15 +1506,6 @@ export default function SkygridApp() {
                     }}
                   >
                     <CheckCircle2 /> 기체 선택
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() =>
-                      deleteDroneById(mapContextMenu.droneId ?? '')
-                    }
-                  >
-                    <Trash2 /> 기체 삭제
                   </button>
                   <button
                     type="button"
@@ -1519,47 +1519,25 @@ export default function SkygridApp() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => addWaypointAt(mapContextMenu.point)}
-                  >
-                    <MapPinPlus /> 이 위치에 정찰지점 등록
-                  </button>
-                </>
-              ) : mapContextMenu.waypointId ? (
-                <>
-                  <button type="button" onClick={closeMapContextMenu}>
-                    <CheckCircle2 /> 선택 지점 편집
-                  </button>
-                  <button
-                    type="button"
                     className="danger"
                     onClick={() =>
-                      deleteWaypointById(mapContextMenu.waypointId ?? '')
+                      deleteDroneById(mapContextMenu.droneId ?? '')
                     }
                   >
-                    <Trash2 /> 정찰지점 삭제
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addDroneAt(mapContextMenu.point)}
-                  >
-                    <Satellite /> 이 위치에 기체 배치
+                    <Trash2 /> 기체 삭제
                   </button>
                 </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => addWaypointAt(mapContextMenu.point)}
-                  >
-                    <MapPinPlus /> 이 위치에 정찰지점 등록
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addDroneAt(mapContextMenu.point)}
-                  >
-                    <Satellite /> 이 위치에 기체 배치
-                  </button>
-                </>
+              )}
+              {mapContextMenu.waypointId && (
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() =>
+                    deleteWaypointById(mapContextMenu.waypointId ?? '')
+                  }
+                >
+                  <Trash2 /> 정찰 포인트 삭제
+                </button>
               )}
               <button
                 type="button"
