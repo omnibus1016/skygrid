@@ -1159,10 +1159,6 @@ export default function SkygridApp() {
                     <RefreshCw />
                   </Button>
                 </div>
-                <div className="field-mode-notice">
-                  웹 앱은 기체를 자동 이동시키지 않습니다. 운용자가
-                  위치·배터리·정찰 완료를 입력하면 AI가 다음 경로를 갱신합니다.
-                </div>
               </div>
 
               <DropoutControl
@@ -1706,19 +1702,6 @@ export default function SkygridApp() {
                     value={metrics.coverage}
                     className="h-1.5 bg-white/10"
                   />
-                  <p>
-                    {mission.running
-                      ? mission.drones
-                          .filter((drone) => drone.status === 'active')
-                          .map((drone) => {
-                            const target = drone.route[drone.routeIndex];
-                            return target
-                              ? `${drone.id} → ${target}`
-                              : `${drone.id} 대기`;
-                          })
-                          .join(' · ')
-                      : '임무를 시작하거나 10초 단위 진행으로 경로를 확인할 수 있습니다.'}
-                  </p>
                 </div>
                 <div className="metric-grid">
                   <MetricCard
@@ -2001,12 +1984,8 @@ function DropoutControl({
         onClick={onExecute}
         disabled={!activeDrones.length}
       >
-        <AlertTriangle /> 즉시 이탈 처리 · AI 재계획
+        <AlertTriangle /> 이탈 처리
       </Button>
-      <p>
-        실행 즉시 해당 기체의 경로를 제거하고 잔여 기체에 정찰지점을
-        재할당합니다.
-      </p>
     </div>
   );
 }
