@@ -219,8 +219,10 @@ export default function SkygridApp() {
       : (selectedWaypoint?.id ?? '선택지점');
   const canDeleteSelectedEntity =
     selectedMapEntity === 'drone'
-      ? Boolean(selectedDrone) && mission.drones.length > 1
-      : Boolean(selectedWaypoint) && mission.waypoints.length > 1;
+      ? Boolean(selectedDrone)
+      : Boolean(selectedWaypoint);
+  const missionReady =
+    mission.drones.length > 0 && mission.waypoints.length > 0;
   const activeDropoutDroneId = mission.drones.some(
     (drone) => drone.id === dropoutDroneId && drone.status === 'active',
   )
@@ -361,6 +363,9 @@ export default function SkygridApp() {
   const toggleMission = useCallback(() => {
     setMission((current) => {
       const running = !current.running;
+      if (running && (!current.drones.length || !current.waypoints.length)) {
+        return current;
+      }
       return {
         ...current,
         running,
@@ -387,12 +392,14 @@ export default function SkygridApp() {
 
   const stepSimulation = useCallback(() => {
     setMission((current) => ({
-      ...advanceMission(
-        { ...current, running: true },
-        10,
-        config,
-        policyBundle.policy,
-      ),
+      ...(current.drones.length && current.waypoints.length
+        ? advanceMission(
+            { ...current, running: true },
+            10,
+            config,
+            policyBundle.policy,
+          )
+        : current),
       running: false,
     }));
   }, [config, policyBundle.policy]);
@@ -567,7 +574,7 @@ export default function SkygridApp() {
 
   const deleteWaypointById = useCallback(
     (waypointId: string) => {
-      if (!waypointId || mission.waypoints.length <= 1) return;
+      if (!waypointId) return;
       setSelectedWaypointId(
         mission.waypoints.find((waypoint) => waypoint.id !== waypointId)?.id ??
           '',
@@ -586,6 +593,7 @@ export default function SkygridApp() {
         );
         return {
           ...current,
+          running: current.running && waypoints.length > 0,
           drones: planned.drones,
           waypoints: planned.waypoints,
           replanCount: current.replanCount + 1,
@@ -612,15 +620,16 @@ export default function SkygridApp() {
 
   const deleteDroneById = useCallback(
     (droneId: string) => {
-      if (!droneId || mission.drones.length <= 1) return;
+      if (!droneId) return;
       const remainingDrones = mission.drones.filter(
         (drone) => drone.id !== droneId,
       );
       setSelectedDroneId(remainingDrones[0]?.id ?? '');
       setSelectedMapEntity('drone');
+      setInteraction('inspect');
       setConfig((current) => ({
         ...current,
-        droneCount: Math.max(1, remainingDrones.length),
+        droneCount: remainingDrones.length,
       }));
       setMission((current) => {
         const drones = current.drones.filter((drone) => drone.id !== droneId);
@@ -638,6 +647,7 @@ export default function SkygridApp() {
         );
         return {
           ...current,
+          running: current.running && drones.length > 0,
           drones: planned.drones,
           waypoints: planned.waypoints,
           replanCount: current.replanCount + 1,
@@ -1040,7 +1050,11 @@ export default function SkygridApp() {
                   <span>{formatMissionTime(mission.time)}</span>
                 </div>
                 <div className="button-pair">
-                  <Button className="primary-command" onClick={toggleMission}>
+                  <Button
+                    className="primary-command"
+                    onClick={toggleMission}
+                    disabled={!mission.running && !missionReady}
+                  >
                     {mission.running ? <Pause /> : <Play />}
                     {mission.running ? '일시 정지' : '실험 시작'}
                   </Button>
@@ -1058,10 +1072,21 @@ export default function SkygridApp() {
                   variant="outline"
                   className="mt-2 h-9 w-full justify-start"
                   onClick={stepSimulation}
-                  disabled={mission.running || mission.completed}
+                  disabled={
+                    mission.running || mission.completed || !missionReady
+                  }
                 >
                   <StepForward /> 10초 단위 진행
                 </Button>
+                {!missionReady && (
+                  <div className="empty-inline" role="status">
+                    {!mission.drones.length && !mission.waypoints.length
+                      ? '기체와 정찰지점을 추가해야 임무를 시작할 수 있습니다.'
+                      : !mission.drones.length
+                        ? '기체를 추가해야 임무를 시작할 수 있습니다.'
+                        : '정찰지점을 추가해야 임무를 시작할 수 있습니다.'}
+                  </div>
+                )}
               </div>
 
               <DropoutControl
@@ -1082,7 +1107,7 @@ export default function SkygridApp() {
                   label="가상 기체"
                   value={config.droneCount}
                   suffix="대"
-                  min={2}
+                  min={0}
                   max={10}
                   step={1}
                   onChange={(value) =>
@@ -1176,7 +1201,11 @@ export default function SkygridApp() {
                   <span>{formatMissionTime(mission.time)}</span>
                 </div>
                 <div className="button-pair">
-                  <Button className="primary-command" onClick={toggleMission}>
+                  <Button
+                    className="primary-command"
+                    onClick={toggleMission}
+                    disabled={!mission.running && !missionReady}
+                  >
                     {mission.running ? <Pause /> : <Play />}
                     {mission.running ? '기록 정지' : '기록 시작'}
                   </Button>
@@ -1471,8 +1500,9 @@ export default function SkygridApp() {
                     interaction === 'move-drone' ? 'inspect' : 'move-drone',
                   )
                 }
+                disabled={!selectedDrone}
               >
-                <LocateFixed /> {selectedDroneId} 위치 지정
+                <LocateFixed /> {selectedDroneId || '기체'} 위치 지정
               </button>
               {interaction !== 'inspect' && (
                 <span className="map-click-guide">
