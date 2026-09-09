@@ -49,6 +49,7 @@ jobs:
           fi
           cp dist/client/.nojekyll "${deploy_dir}/.nojekyll"
           cp dist/client/favicon.svg "${deploy_dir}/favicon.svg"
+          cp -R dist/client/fonts "${deploy_dir}/fonts"
           cp -R dist/client/samples "${deploy_dir}/samples"
           echo "DEPLOY_DIR=${deploy_dir}" >> "${GITHUB_ENV}"
 
