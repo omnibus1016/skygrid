@@ -16,7 +16,6 @@ import {
   Bot,
   BrainCircuit,
   CheckCircle2,
-  ChevronDown,
   CircleDot,
   Clock3,
   Crosshair,
@@ -36,6 +35,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  StepForward,
+  Trash2,
   Upload,
   Zap,
 } from 'lucide-react';
@@ -55,15 +56,6 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -87,9 +79,11 @@ import {
   trainDqnPolicy,
 } from '@/lib/skygrid/rl-policy';
 import {
+  advanceFieldMission,
   advanceMission,
   createMission,
   missionMetrics,
+  restoreDrone,
   runBatchEvaluation,
   triggerFailure,
 } from '@/lib/skygrid/simulation';
@@ -182,17 +176,23 @@ export default function SkygridApp() {
     runBatchEvaluation(DEFAULT_CONFIG, training.policy, 48),
   );
   const [busyAction, setBusyAction] = useState<'train' | 'batch' | null>(null);
-  const [dropoutOpen, setDropoutOpen] = useState(false);
   const [dropoutDroneId, setDropoutDroneId] = useState('UAV-02');
+  const [dropoutReason, setDropoutReason] = useState('통신 두절');
+  const [mapBase, setMapBase] = useState<'satellite' | 'street'>('satellite');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const metrics = useMemo(() => missionMetrics(mission), [mission]);
   const selectedDrone =
     mission.drones.find((drone) => drone.id === selectedDroneId) ??
     mission.drones[0];
-  const selectedWaypoint = mission.waypoints.find(
-    (waypoint) => waypoint.id === selectedWaypointId,
-  );
+  const selectedWaypoint =
+    mission.waypoints.find((waypoint) => waypoint.id === selectedWaypointId) ??
+    mission.waypoints[0];
+  const activeDropoutDroneId = mission.drones.some(
+    (drone) => drone.id === dropoutDroneId && drone.status === 'active',
+  )
+    ? dropoutDroneId
+    : (mission.drones.find((drone) => drone.status === 'active')?.id ?? '');
   const selectedLog = logs.find((log) => log.id === selectedLogId) ?? logs[0];
   const selectedLogMetrics = useMemo(
     () =>
@@ -237,14 +237,14 @@ export default function SkygridApp() {
     if (!mission.running) return;
     const timer = window.setInterval(() => {
       setMission((current) =>
-        advanceMission(
-          current,
-          0.25 * config.simRate,
-          mode === 'field'
-            ? { ...config, failureAt: Number.POSITIVE_INFINITY }
-            : config,
-          policyBundle.policy,
-        ),
+        mode === 'field'
+          ? advanceFieldMission(current, 0.25)
+          : advanceMission(
+              current,
+              0.25 * config.simRate,
+              config,
+              policyBundle.policy,
+            ),
       );
     }, 250);
     return () => window.clearInterval(timer);
@@ -294,24 +294,91 @@ export default function SkygridApp() {
     [config.planner, policyBundle.policy],
   );
 
-  const confirmDropout = useCallback(() => {
+  const executeDropout = useCallback(() => {
+    if (!activeDropoutDroneId) return;
     setMission((current) =>
       triggerFailure(
         current,
-        dropoutDroneId,
+        activeDropoutDroneId,
+        config.planner,
+        policyBundle.policy,
+        dropoutReason,
+      ),
+    );
+    setSelectedDroneId(activeDropoutDroneId);
+  }, [
+    activeDropoutDroneId,
+    dropoutReason,
+    config.planner,
+    policyBundle.policy,
+  ]);
+
+  const recoverSelectedDrone = useCallback(() => {
+    if (!selectedDroneId) return;
+    setMission((current) =>
+      restoreDrone(
+        current,
+        selectedDroneId,
         config.planner,
         policyBundle.policy,
       ),
     );
-    setDropoutOpen(false);
-  }, [dropoutDroneId, config.planner, policyBundle.policy]);
+  }, [selectedDroneId, config.planner, policyBundle.policy]);
+
+  const toggleMission = useCallback(() => {
+    setMission((current) => {
+      const running = !current.running;
+      return {
+        ...current,
+        running,
+        events: [
+          {
+            id: `clock-${Date.now()}`,
+            time: current.time,
+            kind: 'system' as const,
+            title: running
+              ? mode === 'field'
+                ? '현장 임무 기록 시작'
+                : '가상 정찰 임무 시작'
+              : '임무 일시 정지',
+            detail:
+              mode === 'field'
+                ? '기체 위치와 정찰 결과는 운용자 입력으로만 갱신됩니다.'
+                : `시뮬레이션 ${config.simRate}배속`,
+          },
+          ...current.events,
+        ].slice(0, 18),
+      };
+    });
+  }, [config.simRate, mode]);
+
+  const stepSimulation = useCallback(() => {
+    setMission((current) => ({
+      ...advanceMission(
+        { ...current, running: true },
+        10,
+        config,
+        policyBundle.policy,
+      ),
+      running: false,
+    }));
+  }, [config, policyBundle.policy]);
 
   const handleMapClick = useCallback(
     (point: GeoPoint) => {
       if (interaction === 'add-waypoint') {
+        const nextNumber =
+          Math.max(
+            0,
+            ...mission.waypoints.map((waypoint) =>
+              Number.parseInt(waypoint.id.replace(/\D/g, ''), 10),
+            ),
+          ) + 1;
+        const waypointId = `RP-${String(nextNumber).padStart(2, '0')}`;
+        setSelectedWaypointId(waypointId);
         setMission((current) => {
           const waypoint: Waypoint = {
-            id: `RP-${String(current.waypoints.length + 1).padStart(2, '0')}`,
+            id: waypointId,
             ...point,
             priority: 4,
             revisitSec: 150,
@@ -319,21 +386,156 @@ export default function SkygridApp() {
             lastVisited: current.time,
             visitedCount: 0,
           };
-          return { ...current, waypoints: [...current.waypoints, waypoint] };
+          const waypoints = [...current.waypoints, waypoint];
+          const planned = assignRoutes(
+            current.drones,
+            waypoints,
+            current.time,
+            config.planner,
+            policyBundle.policy,
+          );
+          return {
+            ...current,
+            drones: planned.drones,
+            waypoints: planned.waypoints,
+            replanCount: current.replanCount + 1,
+            events: [
+              {
+                id: `waypoint-add-${Date.now()}`,
+                time: current.time,
+                kind: 'replan' as const,
+                title: `${waypoint.id} 정찰지점 추가`,
+                detail: '새 지점을 포함하여 AI 경로를 다시 계산했습니다.',
+              },
+              ...current.events,
+            ].slice(0, 18),
+          };
         });
         setInteraction('inspect');
       } else if (interaction === 'move-drone' && selectedDroneId) {
-        setMission((current) => ({
-          ...current,
-          drones: current.drones.map((drone) =>
+        setMission((current) => {
+          const drones = current.drones.map((drone) =>
             drone.id === selectedDroneId ? { ...drone, ...point } : drone,
-          ),
-        }));
+          );
+          const planned = assignRoutes(
+            drones,
+            current.waypoints,
+            current.time,
+            config.planner,
+            policyBundle.policy,
+          );
+          return {
+            ...current,
+            drones: planned.drones,
+            waypoints: planned.waypoints,
+            replanCount: current.replanCount + 1,
+            events: [
+              {
+                id: `position-${Date.now()}`,
+                time: current.time,
+                kind: 'system' as const,
+                title: `${selectedDroneId} 위치 업데이트`,
+                detail: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)} · AI 경로 재계산`,
+              },
+              ...current.events,
+            ].slice(0, 18),
+          };
+        });
         setInteraction('inspect');
       }
     },
-    [interaction, selectedDroneId],
+    [
+      interaction,
+      selectedDroneId,
+      mission.waypoints,
+      config.planner,
+      policyBundle.policy,
+    ],
   );
+
+  const deleteSelectedWaypoint = useCallback(() => {
+    if (!selectedWaypointId || mission.waypoints.length <= 1) return;
+    setSelectedWaypointId(
+      mission.waypoints.find((waypoint) => waypoint.id !== selectedWaypointId)
+        ?.id ?? '',
+    );
+    setMission((current) => {
+      const waypoints = current.waypoints.filter(
+        (waypoint) => waypoint.id !== selectedWaypointId,
+      );
+      const planned = assignRoutes(
+        current.drones,
+        waypoints,
+        current.time,
+        config.planner,
+        policyBundle.policy,
+      );
+      return {
+        ...current,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+        replanCount: current.replanCount + 1,
+        events: [
+          {
+            id: `waypoint-delete-${Date.now()}`,
+            time: current.time,
+            kind: 'warning' as const,
+            title: `${selectedWaypointId} 정찰지점 삭제`,
+            detail: '남은 정찰지점으로 경로를 다시 계산했습니다.',
+          },
+          ...current.events,
+        ].slice(0, 18),
+      };
+    });
+  }, [
+    selectedWaypointId,
+    mission.waypoints,
+    config.planner,
+    policyBundle.policy,
+  ]);
+
+  const reportWaypointVisit = useCallback(() => {
+    if (!selectedWaypointId) return;
+    setMission((current) => {
+      const waypoints = current.waypoints.map((waypoint) =>
+        waypoint.id === selectedWaypointId
+          ? {
+              ...waypoint,
+              lastVisited: current.time,
+              visitedCount: waypoint.visitedCount + 1,
+            }
+          : waypoint,
+      );
+      const planned = assignRoutes(
+        current.drones,
+        waypoints,
+        current.time,
+        config.planner,
+        policyBundle.policy,
+      );
+      return {
+        ...current,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+        replanCount: current.replanCount + 1,
+        events: [
+          {
+            id: `visit-report-${Date.now()}`,
+            time: current.time,
+            kind: 'visit' as const,
+            title: `${selectedWaypointId} 정찰 완료 보고`,
+            detail: `${selectedDroneId || '운용 기체'} 관측 결과 반영 · 후속 경로 재계산`,
+          },
+          ...current.events,
+        ].slice(0, 18),
+      };
+    });
+  }, [
+    selectedWaypointId,
+    selectedDroneId,
+    config.planner,
+    policyBundle.policy,
+  ]);
 
   const updateWaypoint = useCallback(
     (patch: Partial<Waypoint>) => {
@@ -602,15 +804,9 @@ export default function SkygridApp() {
             <span className="status-pulse" />{' '}
             {mission.running ? 'MISSION ACTIVE' : 'SYSTEM READY'}
           </Badge>
-          <button
-            className="scenario-select"
-            type="button"
-            aria-label="기체 이탈 시나리오 열기"
-            onClick={() => setDropoutOpen(true)}
-          >
-            SCN-{String(config.randomSeed).slice(-2)} / 기체 이탈{' '}
-            <ChevronDown size={14} />
-          </button>
+          <div className="scenario-select" aria-label="현재 시나리오">
+            SCN-{String(config.randomSeed).slice(-2)} / 임무 연속성 검증
+          </div>
         </div>
       </header>
 
@@ -624,15 +820,7 @@ export default function SkygridApp() {
                   <span>{formatMissionTime(mission.time)}</span>
                 </div>
                 <div className="button-pair">
-                  <Button
-                    className="primary-command"
-                    onClick={() =>
-                      setMission((current) => ({
-                        ...current,
-                        running: !current.running,
-                      }))
-                    }
-                  >
+                  <Button className="primary-command" onClick={toggleMission}>
                     {mission.running ? <Pause /> : <Play />}
                     {mission.running ? '일시 정지' : '실험 시작'}
                   </Button>
@@ -647,14 +835,23 @@ export default function SkygridApp() {
                   </Button>
                 </div>
                 <Button
-                  variant="destructive"
+                  variant="outline"
                   className="mt-2 h-9 w-full justify-start"
-                  onClick={() => setDropoutOpen(true)}
-                  disabled={mission.failureTriggered}
+                  onClick={stepSimulation}
+                  disabled={mission.running || mission.completed}
                 >
-                  <AlertTriangle /> 지금 기체 이탈
+                  <StepForward /> 10초 단위 진행
                 </Button>
               </div>
+
+              <DropoutControl
+                drones={mission.drones}
+                droneId={activeDropoutDroneId}
+                reason={dropoutReason}
+                onDroneChange={setDropoutDroneId}
+                onReasonChange={setDropoutReason}
+                onExecute={executeDropout}
+              />
 
               <div className="rail-section parameter-panel">
                 <div className="section-heading">
@@ -745,6 +942,8 @@ export default function SkygridApp() {
               <WaypointEditor
                 selected={selectedWaypoint}
                 onChange={updateWaypoint}
+                onDelete={deleteSelectedWaypoint}
+                onReplan={() => replanNow()}
               />
             </>
           )}
@@ -757,15 +956,7 @@ export default function SkygridApp() {
                   <span>{formatMissionTime(mission.time)}</span>
                 </div>
                 <div className="button-pair">
-                  <Button
-                    className="primary-command"
-                    onClick={() =>
-                      setMission((current) => ({
-                        ...current,
-                        running: !current.running,
-                      }))
-                    }
-                  >
+                  <Button className="primary-command" onClick={toggleMission}>
                     {mission.running ? <Pause /> : <Play />}
                     {mission.running ? '임무 정지' : '임무 개시'}
                   </Button>
@@ -779,14 +970,20 @@ export default function SkygridApp() {
                     <RefreshCw />
                   </Button>
                 </div>
-                <Button
-                  variant="destructive"
-                  className="mt-2 h-10 w-full justify-start"
-                  onClick={() => setDropoutOpen(true)}
-                >
-                  <AlertTriangle /> 기체 이탈 보고
-                </Button>
+                <div className="field-mode-notice">
+                  웹 앱은 기체를 자동 이동시키지 않습니다. 운용자가
+                  위치·배터리·정찰 완료를 입력하면 AI가 다음 경로를 갱신합니다.
+                </div>
               </div>
+
+              <DropoutControl
+                drones={mission.drones}
+                droneId={activeDropoutDroneId}
+                reason={dropoutReason}
+                onDroneChange={setDropoutDroneId}
+                onReasonChange={setDropoutReason}
+                onExecute={executeDropout}
+              />
 
               <div className="rail-section">
                 <div className="section-heading">
@@ -833,10 +1030,26 @@ export default function SkygridApp() {
               {selectedDrone && (
                 <div className="rail-section">
                   <div className="section-heading">
-                    <span>SELECTED AIRCRAFT</span>
-                    <span style={{ color: selectedDrone.color }}>
-                      {selectedDrone.id}
-                    </span>
+                    <span>AIRCRAFT STATUS INPUT</span>
+                    <span>{mission.drones.length} AIRCRAFT</span>
+                  </div>
+                  <div className="aircraft-selector">
+                    {mission.drones.map((drone) => (
+                      <button
+                        key={drone.id}
+                        type="button"
+                        className={drone.id === selectedDroneId ? 'active' : ''}
+                        onClick={() => setSelectedDroneId(drone.id)}
+                      >
+                        <i style={{ background: drone.color }} />
+                        <span>{drone.id}</span>
+                        <b>
+                          {drone.status === 'failed'
+                            ? '이탈'
+                            : `${drone.battery.toFixed(0)}%`}
+                        </b>
+                      </button>
+                    ))}
                   </div>
                   <div className="selected-aircraft">
                     <span
@@ -868,15 +1081,28 @@ export default function SkygridApp() {
                   <Button
                     className="mt-3 h-10 w-full"
                     onClick={() => replanNow('rl')}
+                    disabled={selectedDrone.status === 'failed'}
                   >
                     <BrainCircuit /> AI 경로 재계산
                   </Button>
+                  {selectedDrone.status === 'failed' && (
+                    <Button
+                      variant="outline"
+                      className="mt-2 h-9 w-full"
+                      onClick={recoverSelectedDrone}
+                    >
+                      <RefreshCw /> 선택 기체 임무 복귀
+                    </Button>
+                  )}
                 </div>
               )}
 
               <WaypointEditor
                 selected={selectedWaypoint}
                 onChange={updateWaypoint}
+                onDelete={deleteSelectedWaypoint}
+                onVisit={reportWaypointVisit}
+                onReplan={() => replanNow()}
               />
             </>
           )}
@@ -978,7 +1204,9 @@ export default function SkygridApp() {
                   <CircleDot />{' '}
                   {mission.failureTriggered
                     ? '기체 이탈 · 재계획 완료'
-                    : `이탈 예정 ${formatMissionTime(config.failureAt)}`}
+                    : mode === 'field'
+                      ? '운용자 상태 입력 대기'
+                      : `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`}
                 </Badge>
               )}
               {mode === 'analysis' && (
@@ -987,21 +1215,77 @@ export default function SkygridApp() {
                 </Badge>
               )}
             </div>
-            <div className="map-mode-label">
-              <span className="status-pulse" />
-              {mode === 'field'
-                ? 'FIELD ASSIST'
-                : mode === 'analysis'
-                  ? 'LOG REPLAY'
-                  : 'MISSION SIM'}
+            <div className="map-toolbar-right">
+              <div className="layer-switch" aria-label="지도 배경 선택">
+                <button
+                  type="button"
+                  className={mapBase === 'satellite' ? 'active' : ''}
+                  onClick={() => setMapBase('satellite')}
+                >
+                  <Satellite /> 위성
+                </button>
+                <button
+                  type="button"
+                  className={mapBase === 'street' ? 'active' : ''}
+                  onClick={() => setMapBase('street')}
+                >
+                  <MapIcon /> 지도
+                </button>
+              </div>
+              <div className="map-mode-label">
+                <span className="status-pulse" />
+                {mode === 'field'
+                  ? 'FIELD ASSIST'
+                  : mode === 'analysis'
+                    ? 'LOG REPLAY'
+                    : 'MISSION SIM'}
+              </div>
             </div>
           </div>
 
+          {mode !== 'analysis' && (
+            <div className="map-edit-toolbar">
+              <button
+                type="button"
+                className={`map-tool ${interaction === 'add-waypoint' ? 'active' : ''}`}
+                onClick={() =>
+                  setInteraction(
+                    interaction === 'add-waypoint' ? 'inspect' : 'add-waypoint',
+                  )
+                }
+              >
+                <MapPinPlus /> 정찰지점 추가
+              </button>
+              <button
+                type="button"
+                className="map-tool danger"
+                onClick={deleteSelectedWaypoint}
+                disabled={!selectedWaypoint || mission.waypoints.length <= 1}
+              >
+                <Trash2 /> {selectedWaypoint?.id ?? '선택지점'} 삭제
+              </button>
+              <button
+                type="button"
+                className="map-tool"
+                onClick={() => replanNow()}
+              >
+                <BrainCircuit /> 전체 경로 재계산
+              </button>
+              {interaction !== 'inspect' && (
+                <span className="map-click-guide">
+                  <Crosshair /> 지도에서 새 위치를 클릭하세요
+                </span>
+              )}
+            </div>
+          )}
+
           <OperationalMap
             mode={mode}
+            mapBase={mapBase}
             mission={mission}
             logs={logs}
             selectedDroneId={selectedDroneId}
+            selectedWaypointId={selectedWaypointId}
             interaction={interaction}
             onMapClick={handleMapClick}
             onSelectDrone={setSelectedDroneId}
@@ -1079,6 +1363,29 @@ export default function SkygridApp() {
                       중요도 가중 현재 충족률
                     </div>
                   </div>
+                </div>
+                <div className="mission-progress">
+                  <div>
+                    <span>최초 정찰 완료율</span>
+                    <strong>{metrics.coverage.toFixed(0)}%</strong>
+                  </div>
+                  <Progress
+                    value={metrics.coverage}
+                    className="h-1.5 bg-white/10"
+                  />
+                  <p>
+                    {mission.running
+                      ? mission.drones
+                          .filter((drone) => drone.status === 'active')
+                          .map((drone) => {
+                            const target = drone.route[drone.routeIndex];
+                            return target
+                              ? `${drone.id} → ${target}`
+                              : `${drone.id} 대기`;
+                          })
+                          .join(' · ')
+                      : '임무를 시작하거나 10초 단위 진행으로 경로를 확인할 수 있습니다.'}
+                  </p>
                 </div>
                 <div className="metric-grid">
                   <MetricCard
@@ -1289,60 +1596,73 @@ export default function SkygridApp() {
           )}
         </aside>
       </section>
-
-      <Dialog open={dropoutOpen} onOpenChange={setDropoutOpen}>
-        <DialogContent className="dropout-dialog">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="text-red-400" /> 기체 이탈 처리
-            </DialogTitle>
-            <DialogDescription>
-              선택한 기체를 임무에서 제외하고 잔여 기체의 정찰경로를 즉시
-              재계산합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <label className="control-label" htmlFor="dropout-drone-select">
-            이탈 기체
-          </label>
-          <Select
-            value={dropoutDroneId}
-            onValueChange={(value) => {
-              if (value) setDropoutDroneId(value);
-            }}
-          >
-            <SelectTrigger id="dropout-drone-select" className="control-select">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {mission.drones
-                .filter((drone) => drone.status === 'active')
-                .map((drone) => (
-                  <SelectItem key={drone.id} value={drone.id}>
-                    {drone.id} · {drone.model}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-          <div className="decision-preview">
-            <BrainCircuit />
-            <div>
-              <strong>{PLANNER_LABEL[config.planner]}</strong>
-              <span>
-                현재 위치·배터리·정찰 중요도·미정찰 시간을 반영합니다.
-              </span>
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>
-              취소
-            </DialogClose>
-            <Button variant="destructive" onClick={confirmDropout}>
-              <AlertTriangle /> 이탈 확정 및 재계획
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </main>
+  );
+}
+
+function DropoutControl({
+  drones,
+  droneId,
+  reason,
+  onDroneChange,
+  onReasonChange,
+  onExecute,
+}: {
+  drones: ReturnType<typeof createMission>['drones'];
+  droneId: string;
+  reason: string;
+  onDroneChange: (value: string) => void;
+  onReasonChange: (value: string) => void;
+  onExecute: () => void;
+}) {
+  const activeDrones = drones.filter((drone) => drone.status === 'active');
+  return (
+    <div className="rail-section dropout-control">
+      <div className="section-heading">
+        <span>AIRCRAFT DROPOUT</span>
+        <AlertTriangle size={14} />
+      </div>
+      <div className="dropout-fields">
+        <label>
+          <span>이탈 기체</span>
+          <select
+            value={droneId}
+            onChange={(event) => onDroneChange(event.target.value)}
+            disabled={!activeDrones.length}
+          >
+            {activeDrones.map((drone) => (
+              <option key={drone.id} value={drone.id}>
+                {drone.id} · {drone.model}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>이탈 원인</span>
+          <select
+            value={reason}
+            onChange={(event) => onReasonChange(event.target.value)}
+          >
+            <option value="통신 두절">통신 두절</option>
+            <option value="피격 추정">피격 추정</option>
+            <option value="배터리 임계치 도달">배터리 임계치 도달</option>
+            <option value="비행 제어 이상">비행 제어 이상</option>
+          </select>
+        </label>
+      </div>
+      <Button
+        variant="destructive"
+        className="mt-2 h-10 w-full justify-start"
+        onClick={onExecute}
+        disabled={!activeDrones.length}
+      >
+        <AlertTriangle /> 즉시 이탈 처리 · AI 재계획
+      </Button>
+      <p>
+        실행 즉시 해당 기체의 경로를 제거하고 잔여 기체에 정찰지점을
+        재할당합니다.
+      </p>
+    </div>
   );
 }
 
@@ -1387,9 +1707,15 @@ function ParameterSlider({
 function WaypointEditor({
   selected,
   onChange,
+  onDelete,
+  onVisit,
+  onReplan,
 }: {
   selected?: Waypoint;
   onChange: (patch: Partial<Waypoint>) => void;
+  onDelete: () => void;
+  onVisit?: () => void;
+  onReplan: () => void;
 }) {
   if (!selected) return null;
   return (
@@ -1426,6 +1752,23 @@ function WaypointEditor({
           <dd>{selected.visitedCount}</dd>
         </div>
       </dl>
+      <div className="waypoint-actions">
+        {onVisit && (
+          <Button className="h-9" onClick={onVisit}>
+            <CheckCircle2 /> 정찰 완료 보고
+          </Button>
+        )}
+        <Button variant="outline" className="h-9" onClick={onReplan}>
+          <BrainCircuit /> 변경 반영
+        </Button>
+        <Button
+          variant="outline"
+          className="h-9 danger-outline"
+          onClick={onDelete}
+        >
+          <Trash2 /> 지점 삭제
+        </Button>
+      </div>
     </div>
   );
 }

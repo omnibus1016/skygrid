@@ -25,9 +25,11 @@ import type {
 
 interface OperationalMapProps {
   mode: AppMode;
+  mapBase: 'satellite' | 'street';
   mission: MissionState;
   logs: FlightLog[];
   selectedDroneId: string;
+  selectedWaypointId: string;
   interaction: 'inspect' | 'add-waypoint' | 'move-drone';
   onMapClick: (point: GeoPoint) => void;
   onSelectDrone: (id: string) => void;
@@ -79,9 +81,11 @@ function droneIcon(
 
 export default function OperationalMap({
   mode,
+  mapBase,
   mission,
   logs,
   selectedDroneId,
+  selectedWaypointId,
   interaction,
   onMapClick,
   onSelectDrone,
@@ -120,7 +124,9 @@ export default function OperationalMap({
               index % Math.max(1, Math.floor(log.points.length / 200)) === 0,
           ),
         )
-      : [...mission.drones, ...mission.waypoints];
+      : mission.waypoints.length
+        ? mission.waypoints
+        : mission.drones;
   const viewportBounds: ViewportBounds | null = mapPoints.length
     ? {
         minLat: Math.min(...mapPoints.map((point) => point.lat)),
@@ -139,14 +145,24 @@ export default function OperationalMap({
       zoom={15}
       zoomControl
       attributionControl
-      className={`tactical-map interaction-${interaction}`}
+      className={`tactical-map map-base-${mapBase} interaction-${interaction}`}
     >
-      <TileLayer
-        attribution="&copy; OpenStreetMap contributors"
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        subdomains="abc"
-        maxZoom={19}
-      />
+      {mapBase === 'satellite' ? (
+        <TileLayer
+          key="satellite"
+          attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+          url="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          maxZoom={19}
+        />
+      ) : (
+        <TileLayer
+          key="street"
+          attribution="&copy; OpenStreetMap contributors"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          subdomains="abc"
+          maxZoom={19}
+        />
+      )}
       {viewportBounds && <MapViewport {...viewportBounds} />}
       <MapClick onClick={onMapClick} />
 
@@ -193,20 +209,23 @@ export default function OperationalMap({
       {mission.waypoints.map((waypoint) => {
         const overdue =
           mission.time - waypoint.lastVisited > waypoint.revisitSec;
+        const selected = waypoint.id === selectedWaypointId;
         return (
           <CircleMarker
             key={waypoint.id}
             center={[waypoint.lat, waypoint.lng]}
-            radius={5 + waypoint.priority * 0.55}
+            radius={5 + waypoint.priority * 0.55 + (selected ? 2 : 0)}
             pathOptions={{
-              color: overdue
-                ? '#ff786a'
-                : waypoint.priority >= 4
-                  ? '#fbbf62'
-                  : '#73d9ed',
+              color: selected
+                ? '#ffffff'
+                : overdue
+                  ? '#ff786a'
+                  : waypoint.priority >= 4
+                    ? '#fbbf62'
+                    : '#73d9ed',
               fillColor: overdue ? '#501f1b' : '#0b2730',
               fillOpacity: 0.9,
-              weight: 1.5,
+              weight: selected ? 3 : 1.5,
             }}
             eventHandlers={{ click: () => onSelectWaypoint(waypoint.id) }}
           >
