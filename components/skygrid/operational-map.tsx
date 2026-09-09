@@ -30,12 +30,13 @@ interface OperationalMapProps {
   logs: FlightLog[];
   selectedDroneId: string;
   selectedWaypointId: string;
-  interaction: 'inspect' | 'add-waypoint' | 'move-drone';
+  interaction: 'inspect' | 'add-waypoint' | 'add-drone' | 'move-drone';
   onMapClick: (point: GeoPoint) => void;
   onMapContextMenu: (
     point: GeoPoint,
     position: { x: number; y: number },
     waypointId?: string,
+    droneId?: string,
   ) => void;
   onSelectDrone: (id: string) => void;
   onSelectWaypoint: (id: string) => void;
@@ -288,7 +289,22 @@ export default function OperationalMap({
               drone.status === 'failed',
               drone.id === selectedDroneId,
             )}
-            eventHandlers={{ click: () => onSelectDrone(drone.id) }}
+            eventHandlers={{
+              click: () => onSelectDrone(drone.id),
+              contextmenu: (event) => {
+                event.originalEvent.preventDefault();
+                event.originalEvent.stopPropagation();
+                onMapContextMenu(
+                  drone,
+                  {
+                    x: event.containerPoint.x,
+                    y: event.containerPoint.y,
+                  },
+                  undefined,
+                  drone.id,
+                );
+              },
+            }}
           >
             <Tooltip
               direction="right"

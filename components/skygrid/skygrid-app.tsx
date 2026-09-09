@@ -24,6 +24,7 @@ import {
   FileChartColumn,
   Gauge,
   LocateFixed,
+  List,
   Map as MapIcon,
   MapPinPlus,
   Pause,
@@ -57,6 +58,13 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -90,6 +98,7 @@ import {
 } from '@/lib/skygrid/simulation';
 import type {
   AppMode,
+  Drone,
   FlightLog,
   GeoPoint,
   PlannerKind,
@@ -128,6 +137,7 @@ type MapContextMenu = {
   y: number;
   point: GeoPoint;
   waypointId?: string;
+  droneId?: string;
 };
 
 function MetricCard({
@@ -175,7 +185,7 @@ export default function SkygridApp() {
   const [selectedDroneId, setSelectedDroneId] = useState('UAV-01');
   const [selectedWaypointId, setSelectedWaypointId] = useState('RP-01');
   const [interaction, setInteraction] = useState<
-    'inspect' | 'add-waypoint' | 'move-drone'
+    'inspect' | 'add-waypoint' | 'add-drone' | 'move-drone'
   >('inspect');
   const [logs, setLogs] = useState<FlightLog[]>(() => createDemoLogs(mission));
   const [selectedLogId, setSelectedLogId] = useState('DEMO-UAV-01');
@@ -190,6 +200,7 @@ export default function SkygridApp() {
   const [mapContextMenu, setMapContextMenu] = useState<MapContextMenu | null>(
     null,
   );
+  const [droneStatusOpen, setDroneStatusOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const metrics = useMemo(() => missionMetrics(mission), [mission]);
@@ -427,10 +438,77 @@ export default function SkygridApp() {
     [mission.waypoints, config.planner, policyBundle.policy],
   );
 
+  const addDroneAt = useCallback(
+    (point: GeoPoint) => {
+      const nextNumber =
+        Math.max(
+          0,
+          ...mission.drones.map((drone) =>
+            Number.parseInt(drone.id.replace(/\D/g, ''), 10),
+          ),
+        ) + 1;
+      const droneId = `UAV-${String(nextNumber).padStart(2, '0')}`;
+      const newDrone: Drone = {
+        id: droneId,
+        model: 'SIM SCOUT-S',
+        color: ['#67e8f9', '#fbbf62', '#a78bfa', '#64d39b', '#f472b6'][
+          nextNumber % 5
+        ],
+        ...point,
+        speedMps: 11,
+        turnRateDps: 140,
+        battery: 82,
+        reserveBattery: 22,
+        consumptionPerKm: 10.4,
+        status: 'active',
+        route: [],
+        routeIndex: 0,
+        totalDistanceM: 0,
+        heading: 0,
+      };
+      setSelectedDroneId(droneId);
+      setConfig((current) => ({
+        ...current,
+        droneCount: Math.max(current.droneCount, mission.drones.length + 1),
+      }));
+      setMission((current) => {
+        const drones = [...current.drones, newDrone];
+        const planned = assignRoutes(
+          drones,
+          current.waypoints,
+          current.time,
+          config.planner,
+          policyBundle.policy,
+        );
+        return {
+          ...current,
+          drones: planned.drones,
+          waypoints: planned.waypoints,
+          replanCount: current.replanCount + 1,
+          events: [
+            {
+              id: `drone-add-${Date.now()}`,
+              time: current.time,
+              kind: 'replan' as const,
+              title: `${droneId} 기체 추가`,
+              detail: '새 기체를 포함하여 AI 경로를 다시 계산했습니다.',
+            },
+            ...current.events,
+          ].slice(0, 18),
+        };
+      });
+      setInteraction('inspect');
+      setMapContextMenu(null);
+    },
+    [mission.drones, config.planner, policyBundle.policy],
+  );
+
   const handleMapClick = useCallback(
     (point: GeoPoint) => {
       if (interaction === 'add-waypoint') {
         addWaypointAt(point);
+      } else if (interaction === 'add-drone') {
+        addDroneAt(point);
       } else if (interaction === 'move-drone' && selectedDroneId) {
         setMission((current) => {
           const drones = current.drones.map((drone) =>
@@ -461,12 +539,14 @@ export default function SkygridApp() {
           };
         });
         setInteraction('inspect');
+        setMapContextMenu(null);
       }
     },
     [
       interaction,
       selectedDroneId,
       addWaypointAt,
+      addDroneAt,
       config.planner,
       policyBundle.policy,
     ],
@@ -516,14 +596,63 @@ export default function SkygridApp() {
     if (selectedWaypointId) deleteWaypointById(selectedWaypointId);
   }, [selectedWaypointId, deleteWaypointById]);
 
+  const deleteDroneById = useCallback(
+    (droneId: string) => {
+      if (!droneId || mission.drones.length <= 1) return;
+      const remainingDrones = mission.drones.filter(
+        (drone) => drone.id !== droneId,
+      );
+      setSelectedDroneId(remainingDrones[0]?.id ?? '');
+      setConfig((current) => ({
+        ...current,
+        droneCount: Math.max(1, remainingDrones.length),
+      }));
+      setMission((current) => {
+        const drones = current.drones.filter((drone) => drone.id !== droneId);
+        const waypoints = current.waypoints.map((waypoint) =>
+          waypoint.assignedDrone === droneId
+            ? { ...waypoint, assignedDrone: undefined }
+            : waypoint,
+        );
+        const planned = assignRoutes(
+          drones,
+          waypoints,
+          current.time,
+          config.planner,
+          policyBundle.policy,
+        );
+        return {
+          ...current,
+          drones: planned.drones,
+          waypoints: planned.waypoints,
+          replanCount: current.replanCount + 1,
+          events: [
+            {
+              id: `drone-delete-${Date.now()}`,
+              time: current.time,
+              kind: 'warning' as const,
+              title: `${droneId} 기체 삭제`,
+              detail: '남은 기체에 정찰지점을 다시 배정했습니다.',
+            },
+            ...current.events,
+          ].slice(0, 18),
+        };
+      });
+      setMapContextMenu(null);
+    },
+    [mission.drones, config.planner, policyBundle.policy],
+  );
+
   const handleMapContextMenu = useCallback(
     (
       point: GeoPoint,
       position: { x: number; y: number },
       waypointId?: string,
+      droneId?: string,
     ) => {
       if (waypointId) setSelectedWaypointId(waypointId);
-      setMapContextMenu({ ...position, point, waypointId });
+      if (droneId) setSelectedDroneId(droneId);
+      setMapContextMenu({ ...position, point, waypointId, droneId });
     },
     [],
   );
@@ -1265,6 +1394,13 @@ export default function SkygridApp() {
             <div className="map-edit-toolbar">
               <button
                 type="button"
+                className="map-tool"
+                onClick={() => setDroneStatusOpen(true)}
+              >
+                <List /> 기체 현황
+              </button>
+              <button
+                type="button"
                 className={`map-tool ${interaction === 'add-waypoint' ? 'active' : ''}`}
                 onClick={() =>
                   setInteraction(
@@ -1298,11 +1434,16 @@ export default function SkygridApp() {
                   )
                 }
               >
-                <LocateFixed /> 기체 위치 지정
+                <LocateFixed /> {selectedDroneId} 위치 지정
               </button>
               {interaction !== 'inspect' && (
                 <span className="map-click-guide">
-                  <Crosshair /> 지도에서 새 위치를 클릭하세요
+                  <Crosshair />
+                  {interaction === 'move-drone'
+                    ? `${selectedDroneId}를 이동할 위치를 클릭하세요`
+                    : interaction === 'add-drone'
+                      ? '기체를 배치할 위치를 클릭하세요'
+                      : '정찰지점을 등록할 위치를 클릭하세요'}
                 </span>
               )}
             </div>
@@ -1329,11 +1470,50 @@ export default function SkygridApp() {
               style={{ left: mapContextMenu.x, top: mapContextMenu.y }}
             >
               <div className="map-context-title">
-                {mapContextMenu.waypointId
-                  ? `${mapContextMenu.waypointId} 지점 메뉴`
-                  : '지도 위치 메뉴'}
+                {mapContextMenu.droneId
+                  ? `${mapContextMenu.droneId} 기체 메뉴`
+                  : mapContextMenu.waypointId
+                    ? `${mapContextMenu.waypointId} 지점 메뉴`
+                    : '지도 위치 메뉴'}
               </div>
-              {mapContextMenu.waypointId ? (
+              {mapContextMenu.droneId ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDroneId(mapContextMenu.droneId ?? '');
+                      closeMapContextMenu();
+                    }}
+                  >
+                    <CheckCircle2 /> 기체 선택
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() =>
+                      deleteDroneById(mapContextMenu.droneId ?? '')
+                    }
+                  >
+                    <Trash2 /> 기체 삭제
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDroneId(mapContextMenu.droneId ?? '');
+                      setInteraction('move-drone');
+                      closeMapContextMenu();
+                    }}
+                  >
+                    <LocateFixed /> 이 기체 위치 지정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addWaypointAt(mapContextMenu.point)}
+                  >
+                    <MapPinPlus /> 이 위치에 정찰지점 등록
+                  </button>
+                </>
+              ) : mapContextMenu.waypointId ? (
                 <>
                   <button type="button" onClick={closeMapContextMenu}>
                     <CheckCircle2 /> 선택 지점 편집
@@ -1347,14 +1527,28 @@ export default function SkygridApp() {
                   >
                     <Trash2 /> 정찰지점 삭제
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => addDroneAt(mapContextMenu.point)}
+                  >
+                    <Satellite /> 이 위치에 기체 배치
+                  </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => addWaypointAt(mapContextMenu.point)}
-                >
-                  <MapPinPlus /> 이 위치에 정찰지점 등록
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => addWaypointAt(mapContextMenu.point)}
+                  >
+                    <MapPinPlus /> 이 위치에 정찰지점 등록
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addDroneAt(mapContextMenu.point)}
+                  >
+                    <Satellite /> 이 위치에 기체 배치
+                  </button>
+                </>
               )}
               <button
                 type="button"
@@ -1365,6 +1559,65 @@ export default function SkygridApp() {
               </button>
             </dialog>
           )}
+
+          <Dialog open={droneStatusOpen} onOpenChange={setDroneStatusOpen}>
+            <DialogContent className="drone-status-dialog">
+              <DialogHeader>
+                <DialogTitle>기체 현황</DialogTitle>
+                <DialogDescription>
+                  현재 시뮬레이션 상태를 기준으로 한 기체별 정보입니다.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="drone-status-table" aria-label="기체 현황표">
+                <div className="drone-status-head">
+                  <span>기체</span>
+                  <span>상태</span>
+                  <span>배터리</span>
+                  <span>속도</span>
+                  <span>현재 목표</span>
+                  <span>위치</span>
+                </div>
+                {mission.drones.map((drone) => {
+                  const targetId = drone.route[drone.routeIndex];
+                  const statusLabel =
+                    drone.status === 'active'
+                      ? '임무 수행'
+                      : drone.status === 'failed'
+                        ? '이탈'
+                        : drone.status === 'returning'
+                          ? '복귀 중'
+                          : '대기';
+                  return (
+                    <button
+                      key={drone.id}
+                      type="button"
+                      className={`drone-status-row ${drone.id === selectedDroneId ? 'active' : ''}`}
+                      onClick={() => {
+                        setSelectedDroneId(drone.id);
+                        setDroneStatusOpen(false);
+                      }}
+                    >
+                      <span>
+                        <i style={{ background: drone.color }} />
+                        {drone.id}
+                      </span>
+                      <span>{statusLabel}</span>
+                      <strong>{drone.battery.toFixed(0)}%</strong>
+                      <span>
+                        {drone.status === 'failed'
+                          ? '—'
+                          : `${drone.speedMps} m/s`}
+                      </span>
+                      <span>{targetId ?? '대기'}</span>
+                      <span className="drone-position">
+                        {drone.lat.toFixed(5)}, {drone.lng.toFixed(5)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <div className="map-footer">
             <div>
