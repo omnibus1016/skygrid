@@ -38,10 +38,24 @@ jobs:
           GITHUB_PAGES: 'true'
         run: npm run build
 
+      - name: Assemble Pages artifact
+        run: |
+          repo_name="${GITHUB_REPOSITORY#*/}"
+          deploy_dir="dist/client/${repo_name}"
+          cp dist/client/index.html "${deploy_dir}/index.html"
+          cp dist/client/index.rsc "${deploy_dir}/index.rsc"
+          if [ -f dist/client/404.html ]; then
+            cp dist/client/404.html "${deploy_dir}/404.html"
+          fi
+          cp dist/client/.nojekyll "${deploy_dir}/.nojekyll"
+          cp dist/client/favicon.svg "${deploy_dir}/favicon.svg"
+          cp -R dist/client/samples "${deploy_dir}/samples"
+          echo "DEPLOY_DIR=${deploy_dir}" >> "${GITHUB_ENV}"
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: dist/client
+          path: ${{ env.DEPLOY_DIR }}
 
   deploy:
     environment:
