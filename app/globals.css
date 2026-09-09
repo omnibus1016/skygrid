@@ -391,6 +391,8 @@ button {
   z-index: 20;
   display: block;
   pointer-events: auto;
+  left: clamp(8px, var(--context-x), calc(100% - 220px));
+  top: clamp(8px, var(--context-y), calc(100% - 210px));
   min-width: 190px;
   margin: 0;
   padding: 6px;

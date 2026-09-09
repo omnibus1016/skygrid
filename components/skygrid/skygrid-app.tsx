@@ -1473,7 +1473,12 @@ export default function SkygridApp() {
               role="menu"
               aria-label="지도 편집 메뉴"
               onContextMenu={(event) => event.preventDefault()}
-              style={{ left: mapContextMenu.x, top: mapContextMenu.y }}
+              style={
+                {
+                  '--context-x': `${mapContextMenu.x}px`,
+                  '--context-y': `${mapContextMenu.y}px`,
+                } as React.CSSProperties
+              }
             >
               <div className="map-context-title">
                 {mapContextMenu.droneId
