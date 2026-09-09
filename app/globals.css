@@ -192,6 +192,10 @@ button {
 .right-rail {
   border-left: 1px solid #193039;
 }
+.right-rail > .rail-section,
+.right-rail > details {
+  flex: 0 0 auto;
+}
 .rail-section {
   padding: 13px;
   border: 1px solid #182c35;
@@ -596,7 +600,7 @@ button {
   color: #d5e8ee;
 }
 .secondary-panel {
-  overflow: hidden;
+  overflow: visible;
 }
 .secondary-summary {
   cursor: pointer;
@@ -1185,7 +1189,7 @@ button {
   letter-spacing: 0.05em;
 }
 .comparison-section {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 310px;
 }
 .comparison-chart {
