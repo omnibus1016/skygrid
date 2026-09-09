@@ -184,6 +184,9 @@ export default function SkygridApp() {
   );
   const [selectedDroneId, setSelectedDroneId] = useState('UAV-01');
   const [selectedWaypointId, setSelectedWaypointId] = useState('RP-01');
+  const [selectedMapEntity, setSelectedMapEntity] = useState<
+    'drone' | 'waypoint'
+  >('waypoint');
   const [interaction, setInteraction] = useState<
     'inspect' | 'add-waypoint' | 'add-drone' | 'move-drone'
   >('inspect');
@@ -210,6 +213,14 @@ export default function SkygridApp() {
   const selectedWaypoint =
     mission.waypoints.find((waypoint) => waypoint.id === selectedWaypointId) ??
     mission.waypoints[0];
+  const deleteTargetLabel =
+    selectedMapEntity === 'drone'
+      ? (selectedDrone?.id ?? '선택 기체')
+      : (selectedWaypoint?.id ?? '선택지점');
+  const canDeleteSelectedEntity =
+    selectedMapEntity === 'drone'
+      ? Boolean(selectedDrone) && mission.drones.length > 1
+      : Boolean(selectedWaypoint) && mission.waypoints.length > 1;
   const activeDropoutDroneId = mission.drones.some(
     (drone) => drone.id === dropoutDroneId && drone.status === 'active',
   )
@@ -397,6 +408,7 @@ export default function SkygridApp() {
         ) + 1;
       const waypointId = `RP-${String(nextNumber).padStart(2, '0')}`;
       setSelectedWaypointId(waypointId);
+      setSelectedMapEntity('waypoint');
       setMission((current) => {
         const waypoint: Waypoint = {
           id: waypointId,
@@ -467,6 +479,7 @@ export default function SkygridApp() {
         heading: 0,
       };
       setSelectedDroneId(droneId);
+      setSelectedMapEntity('drone');
       setConfig((current) => ({
         ...current,
         droneCount: Math.max(current.droneCount, mission.drones.length + 1),
@@ -559,6 +572,7 @@ export default function SkygridApp() {
         mission.waypoints.find((waypoint) => waypoint.id !== waypointId)?.id ??
           '',
       );
+      setSelectedMapEntity('waypoint');
       setMission((current) => {
         const waypoints = current.waypoints.filter(
           (waypoint) => waypoint.id !== waypointId,
@@ -603,6 +617,7 @@ export default function SkygridApp() {
         (drone) => drone.id !== droneId,
       );
       setSelectedDroneId(remainingDrones[0]?.id ?? '');
+      setSelectedMapEntity('drone');
       setConfig((current) => ({
         ...current,
         droneCount: Math.max(1, remainingDrones.length),
@@ -650,8 +665,14 @@ export default function SkygridApp() {
       waypointId?: string,
       droneId?: string,
     ) => {
-      if (waypointId) setSelectedWaypointId(waypointId);
-      if (droneId) setSelectedDroneId(droneId);
+      if (waypointId) {
+        setSelectedWaypointId(waypointId);
+        setSelectedMapEntity('waypoint');
+      }
+      if (droneId) {
+        setSelectedDroneId(droneId);
+        setSelectedMapEntity('drone');
+      }
       setMapContextMenu({ ...position, point, waypointId, droneId });
     },
     [],
@@ -660,6 +681,20 @@ export default function SkygridApp() {
   const closeMapContextMenu = useCallback(() => {
     setMapContextMenu(null);
   }, []);
+
+  const deleteSelectedMapEntity = useCallback(() => {
+    if (selectedMapEntity === 'drone') {
+      if (selectedDroneId) deleteDroneById(selectedDroneId);
+      return;
+    }
+    if (selectedWaypointId) deleteWaypointById(selectedWaypointId);
+  }, [
+    deleteDroneById,
+    deleteWaypointById,
+    selectedDroneId,
+    selectedMapEntity,
+    selectedWaypointId,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -672,16 +707,15 @@ export default function SkygridApp() {
       if (
         !isTyping &&
         mode !== 'analysis' &&
-        selectedWaypointId &&
         (event.key === 'Backspace' || event.key === 'Delete')
       ) {
         event.preventDefault();
-        deleteSelectedWaypoint();
+        deleteSelectedMapEntity();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelectedWaypoint, mode, selectedWaypointId]);
+  }, [deleteSelectedMapEntity, mode]);
 
   const reportWaypointVisit = useCallback(() => {
     if (!selectedWaypointId) return;
@@ -1417,10 +1451,10 @@ export default function SkygridApp() {
               <button
                 type="button"
                 className="map-tool danger"
-                onClick={deleteSelectedWaypoint}
-                disabled={!selectedWaypoint || mission.waypoints.length <= 1}
+                onClick={deleteSelectedMapEntity}
+                disabled={!canDeleteSelectedEntity}
               >
-                <Trash2 /> {selectedWaypoint?.id ?? '선택지점'} 삭제
+                <Trash2 /> {deleteTargetLabel} 삭제
               </button>
               <button
                 type="button"
@@ -1463,8 +1497,14 @@ export default function SkygridApp() {
             interaction={interaction}
             onMapClick={handleMapClick}
             onMapContextMenu={handleMapContextMenu}
-            onSelectDrone={setSelectedDroneId}
-            onSelectWaypoint={setSelectedWaypointId}
+            onSelectDrone={(droneId) => {
+              setSelectedDroneId(droneId);
+              setSelectedMapEntity('drone');
+            }}
+            onSelectWaypoint={(waypointId) => {
+              setSelectedWaypointId(waypointId);
+              setSelectedMapEntity('waypoint');
+            }}
           />
 
           {mapContextMenu && mode !== 'analysis' && (
@@ -1502,6 +1542,7 @@ export default function SkygridApp() {
                     type="button"
                     onClick={() => {
                       setSelectedDroneId(mapContextMenu.droneId ?? '');
+                      setSelectedMapEntity('drone');
                       closeMapContextMenu();
                     }}
                   >
@@ -1511,6 +1552,7 @@ export default function SkygridApp() {
                     type="button"
                     onClick={() => {
                       setSelectedDroneId(mapContextMenu.droneId ?? '');
+                      setSelectedMapEntity('drone');
                       setInteraction('move-drone');
                       closeMapContextMenu();
                     }}
@@ -1583,6 +1625,7 @@ export default function SkygridApp() {
                       className={`drone-status-row ${drone.id === selectedDroneId ? 'active' : ''}`}
                       onClick={() => {
                         setSelectedDroneId(drone.id);
+                        setSelectedMapEntity('drone');
                         setDroneStatusOpen(false);
                       }}
                     >
