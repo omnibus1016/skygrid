@@ -993,9 +993,6 @@ export default function SkygridApp() {
             <span className="status-pulse" />{' '}
             {mission.running ? '임무 진행 중' : '대기'}
           </Badge>
-          <div className="scenario-select" aria-label="현재 시나리오">
-            시나리오 {String(config.randomSeed).slice(-2)} · 임무 연속성
-          </div>
         </div>
       </header>
 

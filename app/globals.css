@@ -165,19 +165,6 @@ button {
   align-items: center;
   gap: 10px;
 }
-.scenario-select {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #263a43;
-  border-radius: 4px;
-  background: #0c171d;
-  color: #adc1c9;
-  padding: 0 11px;
-  font-size: 12px;
-}
-
 .mission-shell {
   height: calc(100vh - 64px);
   min-height: 0;
