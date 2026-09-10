@@ -368,6 +368,22 @@ button {
   font-size: 13px;
   line-height: 1.6;
 }
+.training-progress-wrap {
+  max-width: 620px;
+  margin-top: 16px;
+}
+.training-progress-wrap > div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  color: #718b96;
+  font-size: 11px;
+}
+.training-progress-wrap strong {
+  color: #a9eaf4;
+  font-family: var(--font-geist-mono);
+  font-weight: 500;
+}
 .training-action-row {
   display: flex;
   align-items: center;

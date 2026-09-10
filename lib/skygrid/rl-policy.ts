@@ -40,6 +40,12 @@ interface Candidate {
   features: number[];
 }
 
+export interface TrainingProgress {
+  episode: number;
+  totalEpisodes: number;
+  reward: number;
+}
+
 export interface PolicyWeights {
   version: 1;
   inputs: number;
@@ -288,10 +294,14 @@ function feasibleTrainingCandidates(
   return candidates;
 }
 
-export function trainDqnPolicy(
+function* trainDqnPolicyGenerator(
   episodes = 700,
   seed = 2026,
-): { policy: CandidateDqn; stats: PolicyStats } {
+): Generator<
+  TrainingProgress,
+  { policy: CandidateDqn; stats: PolicyStats },
+  void
+> {
   const random = mulberry32(seed);
   const policy = new CandidateDqn(random);
   let targetPolicy = policy.clone();
@@ -428,6 +438,11 @@ export function trainDqnPolicy(
           recentRewards.length,
       });
     }
+    yield {
+      episode,
+      totalEpisodes: episodes,
+      reward: episodeReward,
+    };
   }
 
   return {
@@ -442,6 +457,46 @@ export function trainDqnPolicy(
       rewardHistory,
     },
   };
+}
+
+export function trainDqnPolicy(
+  episodes = 700,
+  seed = 2026,
+): { policy: CandidateDqn; stats: PolicyStats } {
+  const trainer = trainDqnPolicyGenerator(episodes, seed);
+  let step = trainer.next();
+  while (!step.done) step = trainer.next();
+  return step.value;
+}
+
+export async function trainDqnPolicyAsync(
+  episodes = 700,
+  seed = 2026,
+  onProgress?: (progress: TrainingProgress) => void,
+): Promise<{ policy: CandidateDqn; stats: PolicyStats }> {
+  const trainer = trainDqnPolicyGenerator(episodes, seed);
+  let step = trainer.next();
+  let lastProgress: TrainingProgress | null = null;
+
+  while (!step.done) {
+    lastProgress = step.value as TrainingProgress;
+    for (let count = 0; count < 8; count += 1) {
+      step = trainer.next();
+      if (step.done) break;
+      lastProgress = step.value as TrainingProgress;
+    }
+    if (lastProgress) onProgress?.(lastProgress);
+    if (step.done) break;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  if (lastProgress && lastProgress.episode < episodes)
+    onProgress?.({
+      episode: episodes,
+      totalEpisodes: episodes,
+      reward: lastProgress.reward,
+    });
+  return step.value;
 }
 
 export function missionFeatures(

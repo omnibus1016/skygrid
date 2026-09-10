@@ -86,7 +86,7 @@ import {
   CandidateDqn,
   assignRoutes,
   plannerScore,
-  trainDqnPolicy,
+  trainDqnPolicyAsync,
 } from '@/lib/skygrid/rl-policy';
 import {
   PRETRAINED_POLICY_STATS,
@@ -289,6 +289,7 @@ export default function SkygridApp() {
     'train' | 'batch' | 'compare' | null
   >(null);
   const [trainingEpisodes, setTrainingEpisodes] = useState(1_000);
+  const [trainingProgress, setTrainingProgress] = useState(0);
   const [dropoutDroneId, setDropoutDroneId] = useState('UAV-02');
   const [dropoutReason, setDropoutReason] = useState('통신 두절');
   const [mapBase, setMapBase] = useState<'satellite' | 'street'>('satellite');
@@ -1009,46 +1010,60 @@ export default function SkygridApp() {
 
   const trainAgain = useCallback(() => {
     setBusyAction('train');
+    setTrainingProgress(0);
     window.setTimeout(() => {
-      const next = trainDqnPolicy(
-        trainingEpisodes,
-        config.randomSeed + policyStats.episodes,
-      );
-      const nextBundle: PolicyBundle = {
-        ...next,
-        origin: 'custom',
-        trainedAt: new Date().toISOString(),
-      };
-      savePolicyBundle(nextBundle);
-      setPolicyBundle(nextBundle);
-      setMission((current) => {
-        const planned = assignRoutes(
-          current.drones,
-          current.waypoints,
-          current.time,
-          config.planner,
-          next.policy,
-        );
-        return {
-          ...current,
-          drones: planned.drones,
-          waypoints: planned.waypoints,
-          replanCount: current.replanCount + 1,
-          events: [
-            {
-              id: 'policy-' + Date.now(),
-              time: current.time,
-              kind: 'replan' as const,
-              title: '새 AI 모델 적용',
-              detail:
-                trainingEpisodes.toLocaleString() +
-                '회 재학습 모델로 전체 경로를 갱신했습니다.',
+      void (async () => {
+        try {
+          const next = await trainDqnPolicyAsync(
+            trainingEpisodes,
+            config.randomSeed + policyStats.episodes,
+            (progress) => {
+              setTrainingProgress(
+                Math.round((progress.episode / progress.totalEpisodes) * 100),
+              );
             },
-            ...current.events,
-          ].slice(0, 18),
-        };
-      });
-      setBusyAction(null);
+          );
+          const nextBundle: PolicyBundle = {
+            ...next,
+            origin: 'custom',
+            trainedAt: new Date().toISOString(),
+          };
+          savePolicyBundle(nextBundle);
+          setPolicyBundle(nextBundle);
+          setTrainingProgress(100);
+          setMission((current) => {
+            const planned = assignRoutes(
+              current.drones,
+              current.waypoints,
+              current.time,
+              config.planner,
+              next.policy,
+            );
+            return {
+              ...current,
+              drones: planned.drones,
+              waypoints: planned.waypoints,
+              replanCount: current.replanCount + 1,
+              events: [
+                {
+                  id: 'policy-' + Date.now(),
+                  time: current.time,
+                  kind: 'replan' as const,
+                  title: '새 AI 모델 적용',
+                  detail:
+                    trainingEpisodes.toLocaleString() +
+                    '회 재학습 모델로 전체 경로를 갱신했습니다.',
+                },
+                ...current.events,
+              ].slice(0, 18),
+            };
+          });
+        } catch {
+          setTrainingProgress(0);
+        } finally {
+          setBusyAction(null);
+        }
+      })();
     }, 40);
   }, [
     config.planner,
@@ -1305,6 +1320,7 @@ export default function SkygridApp() {
         <TrainingWorkspace
           policyBundle={policyBundle}
           trainingEpisodes={trainingEpisodes}
+          trainingProgress={trainingProgress}
           onTrainingEpisodesChange={setTrainingEpisodes}
           onTrain={trainAgain}
           onRestore={restoreDefaultPolicy}
@@ -2205,6 +2221,7 @@ export default function SkygridApp() {
 function TrainingWorkspace({
   policyBundle,
   trainingEpisodes,
+  trainingProgress,
   onTrainingEpisodesChange,
   onTrain,
   onRestore,
@@ -2212,6 +2229,7 @@ function TrainingWorkspace({
 }: {
   policyBundle: PolicyBundle;
   trainingEpisodes: number;
+  trainingProgress: number;
   onTrainingEpisodesChange: (value: number) => void;
   onTrain: () => void;
   onRestore: () => void;
@@ -2233,7 +2251,7 @@ function TrainingWorkspace({
         </div>
         <Badge className="workspace-status">
           <span className="status-pulse" />
-          {busy ? '학습 중' : '모델 사용 가능'}
+          {busy ? '학습 중 ' + trainingProgress + '%' : '모델 사용 가능'}
         </Badge>
       </div>
 
@@ -2365,6 +2383,13 @@ function TrainingWorkspace({
             학습이 끝나면 현재 임무의 경로를 새 모델 기준으로 다시 계산합니다.
             결과는 이 브라우저에 저장됩니다.
           </p>
+          <div className="training-progress-wrap">
+            <div>
+              <span>학습 진행률</span>
+              <strong>{trainingProgress}%</strong>
+            </div>
+            <Progress value={trainingProgress} className="h-1.5 bg-white/10" />
+          </div>
         </div>
         <div className="training-action-row">
           <Select
