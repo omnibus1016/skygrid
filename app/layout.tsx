@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SKYGRID | UAS Mission Continuity System',
+  title: 'SKYGRID | 군집 무인기 정찰 임무통제체계',
   description:
-    '강화학습 기반 다중 무인기 정찰 임무 시뮬레이션 및 비행 검증 플랫폼',
+    '강화학습 기반 군집 무인기 정찰 임무계획·시뮬레이션·비행 검증 체계',
 };
 
 export default function RootLayout({

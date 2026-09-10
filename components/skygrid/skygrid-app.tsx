@@ -1474,12 +1474,23 @@ export default function SkygridApp() {
       />
       <header className="mission-header">
         <div className="brand-lockup">
-          <div className="brand-mark">
-            <Crosshair size={19} />
+          <div className="brand-insignia" aria-label="대한민국 공군">
+            {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
+            <img
+              className="header-flag"
+              src="brand/korea-flag.svg"
+              alt="대한민국 국기"
+            />
+            {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
+            <img
+              className="header-rokaf"
+              src="brand/rokaf-emblem.png"
+              alt="대한민국 공군 표장"
+            />
           </div>
           <div>
             <div className="brand-name">SKYGRID</div>
-            <div className="brand-sub">군집 무인기 임무 연속성 실험</div>
+            <div className="brand-sub">군집 무인기 정찰 임무통제체계</div>
           </div>
         </div>
         <Tabs
@@ -1506,6 +1517,13 @@ export default function SkygridApp() {
           </TabsList>
         </Tabs>
         <div className="header-status">
+          {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
+          <img
+            className="header-kaist"
+            src="brand/kaist-wordmark.png"
+            alt="KAIST"
+          />
+          <span className="header-divider" aria-hidden="true" />
           <Badge className="system-badge">
             <span className="status-pulse" />{' '}
             {mission.running ? '임무 진행 중' : '대기'}
