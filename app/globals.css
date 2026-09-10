@@ -1232,6 +1232,40 @@ button {
   font: normal 10px var(--font-geist-mono);
   text-align: right;
 }
+.scenario-comparison-table {
+  display: grid;
+  margin-top: 6px;
+  overflow-x: auto;
+  font: 10px var(--font-geist-mono);
+}
+.scenario-comparison-head,
+.scenario-comparison-row {
+  display: grid;
+  grid-template-columns: 1.45fr repeat(5, minmax(34px, 1fr));
+  gap: 4px;
+  align-items: center;
+  min-width: 286px;
+  min-height: 27px;
+  border-bottom: 1px solid #172c35;
+}
+.scenario-comparison-head {
+  color: #5f7b86;
+  font-size: 9px;
+}
+.scenario-comparison-head span:not(:first-child),
+.scenario-comparison-row span:not(:first-child) {
+  text-align: right;
+}
+.scenario-comparison-row strong {
+  overflow: hidden;
+  color: #c9dce2;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scenario-comparison-row span {
+  color: #86a3ad;
+}
 .event-section {
   max-height: 214px;
   overflow: hidden;

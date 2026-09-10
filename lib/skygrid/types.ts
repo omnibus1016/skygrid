@@ -132,3 +132,14 @@ export interface BatchResult {
   distance: number;
   completion: number;
 }
+
+export interface ScenarioComparisonResult {
+  planner: PlannerKind;
+  label: string;
+  continuity: number;
+  coverage: number;
+  weightedGapSeconds: number;
+  recoverySeconds: number | null;
+  distanceKm: number;
+  averageBattery: number;
+}

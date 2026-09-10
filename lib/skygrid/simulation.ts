@@ -9,6 +9,7 @@ import type {
   MissionState,
   PlannerKind,
   ScenarioConfig,
+  ScenarioComparisonResult,
   Waypoint,
 } from './types';
 
@@ -491,6 +492,92 @@ export function runBatchEvaluation(
       weightedGap: totals.weightedGap / runs,
       distance: totals.distance / runs,
       completion: totals.completion / runs,
+    };
+  });
+}
+
+export function cloneMissionState(state: MissionState): MissionState {
+  return {
+    ...state,
+    drones: state.drones.map((drone) => ({
+      ...drone,
+      route: [...drone.route],
+    })),
+    waypoints: state.waypoints.map((waypoint) => ({ ...waypoint })),
+    noFlyZones: state.noFlyZones.map((zone) => ({
+      ...zone,
+      points: zone.points.map((point) => ({ ...point })),
+    })),
+    events: [...state.events],
+  };
+}
+
+export function runScenarioComparison(
+  initialState: MissionState,
+  config: ScenarioConfig,
+  policy: CandidateDqn,
+  durationSeconds = 600,
+): ScenarioComparisonResult[] {
+  const planners: { kind: PlannerKind; label: string }[] = [
+    { kind: 'nearest', label: '최근접 우선' },
+    { kind: 'priority', label: '중요도 우선' },
+    { kind: 'rl', label: '강화학습 DQN' },
+  ];
+  const validFailureDroneId =
+    initialState.drones.find((drone) => drone.id === config.failureDroneId)
+      ?.id ??
+    initialState.drones.find((drone) => drone.status === 'active')?.id;
+
+  return planners.map(({ kind, label }) => {
+    const base = cloneMissionState(initialState);
+    const drones = base.drones.map((drone) => ({
+      ...drone,
+      status:
+        drone.status === 'failed' ? ('failed' as const) : ('active' as const),
+      route: [],
+      routeIndex: 0,
+    }));
+    const waypoints = base.waypoints.map((waypoint) => ({
+      ...waypoint,
+      assignedDrone: undefined,
+    }));
+    const plannerConfig: ScenarioConfig = {
+      ...config,
+      planner: kind,
+      ...(validFailureDroneId ? { failureDroneId: validFailureDroneId } : {}),
+    };
+    const planned = assignRoutes(drones, waypoints, base.time, kind, policy);
+    let state: MissionState = {
+      ...base,
+      running: true,
+      completed: false,
+      failureTriggered: false,
+      drones: planned.drones,
+      waypoints: planned.waypoints,
+      events: [],
+      weightedGapSeconds: 0,
+      replanCount: 0,
+      inferenceMs: 0,
+    };
+    const endTime = state.time + durationSeconds;
+    while (state.running && !state.completed && state.time < endTime) {
+      state = advanceMission(
+        state,
+        Math.min(1, endTime - state.time),
+        plannerConfig,
+        policy,
+      );
+    }
+    const metrics = missionMetrics(state);
+    return {
+      planner: kind,
+      label,
+      continuity: metrics.continuity,
+      coverage: metrics.coverage,
+      weightedGapSeconds: metrics.weightedGapSeconds,
+      recoverySeconds: metrics.recoverySeconds,
+      distanceKm: metrics.totalDistanceKm,
+      averageBattery: metrics.averageBattery,
     };
   });
 }

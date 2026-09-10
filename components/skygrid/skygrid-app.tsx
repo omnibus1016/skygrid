@@ -90,10 +90,12 @@ import {
 import {
   advanceFieldMission,
   advanceMission,
+  cloneMissionState,
   createMission,
   missionMetrics,
   restoreDrone,
   runBatchEvaluation,
+  runScenarioComparison,
   triggerFailure,
 } from '@/lib/skygrid/simulation';
 import type {
@@ -101,8 +103,10 @@ import type {
   Drone,
   FlightLog,
   GeoPoint,
+  MissionState,
   PlannerKind,
   ScenarioConfig,
+  ScenarioComparisonResult,
   Waypoint,
 } from '@/lib/skygrid/types';
 
@@ -196,7 +200,16 @@ export default function SkygridApp() {
   const [batchResults, setBatchResults] = useState(() =>
     runBatchEvaluation(DEFAULT_CONFIG, training.policy, 48),
   );
-  const [busyAction, setBusyAction] = useState<'train' | 'batch' | null>(null);
+  const [comparisonBaseline, setComparisonBaseline] =
+    useState<MissionState | null>(null);
+  const [comparisonConfig, setComparisonConfig] =
+    useState<ScenarioConfig | null>(null);
+  const [scenarioComparison, setScenarioComparison] = useState<
+    ScenarioComparisonResult[] | null
+  >(null);
+  const [busyAction, setBusyAction] = useState<
+    'train' | 'batch' | 'compare' | null
+  >(null);
   const [dropoutDroneId, setDropoutDroneId] = useState('UAV-02');
   const [dropoutReason, setDropoutReason] = useState('통신 두절');
   const [mapBase, setMapBase] = useState<'satellite' | 'street'>('satellite');
@@ -291,6 +304,9 @@ export default function SkygridApp() {
       setMission(next);
       setSelectedDroneId(next.drones[0]?.id ?? '');
       setSelectedWaypointId(next.waypoints[0]?.id ?? '');
+      setComparisonBaseline(null);
+      setComparisonConfig(null);
+      setScenarioComparison(null);
       setInteraction('inspect');
     },
     [config, policyBundle.policy],
@@ -303,6 +319,9 @@ export default function SkygridApp() {
       mission.drones.find((drone) => drone.status === 'active')?.id ??
       config.failureDroneId;
     setConfig((currentConfig) => ({ ...currentConfig, failureDroneId }));
+    setComparisonBaseline(null);
+    setComparisonConfig(null);
+    setScenarioComparison(null);
     setMission((current) => {
       const planned = assignRoutes(
         current.drones,
@@ -403,6 +422,12 @@ export default function SkygridApp() {
   }, [selectedDroneId, config.planner, policyBundle.policy]);
 
   const toggleMission = useCallback(() => {
+    if (!mission.running && !missionReady) return;
+    if (!mission.running && mode === 'simulation') {
+      setComparisonBaseline(cloneMissionState(mission));
+      setComparisonConfig({ ...config });
+      setScenarioComparison(null);
+    }
     setMission((current) => {
       const running = !current.running;
       if (running && (!current.drones.length || !current.waypoints.length)) {
@@ -430,9 +455,14 @@ export default function SkygridApp() {
         ].slice(0, 18),
       };
     });
-  }, [config.simRate, mode]);
+  }, [config, cloneMissionState, mission, missionReady, mode]);
 
   const stepSimulation = useCallback(() => {
+    if (!missionReady) return;
+    if (!comparisonBaseline) {
+      setComparisonBaseline(cloneMissionState(mission));
+      setComparisonConfig({ ...config });
+    }
     setMission((current) => ({
       ...(current.drones.length && current.waypoints.length
         ? advanceMission(
@@ -444,7 +474,7 @@ export default function SkygridApp() {
         : current),
       running: false,
     }));
-  }, [config, policyBundle.policy]);
+  }, [comparisonBaseline, config, mission, missionReady, policyBundle.policy]);
 
   const addWaypointAt = useCallback(
     (point: GeoPoint) => {
@@ -898,6 +928,22 @@ export default function SkygridApp() {
       setBusyAction(null);
     }, 40);
   }, [config, policyBundle.policy]);
+
+  const runCurrentScenarioComparison = useCallback(() => {
+    if (!comparisonBaseline || !comparisonConfig) return;
+    setBusyAction('compare');
+    window.setTimeout(() => {
+      setScenarioComparison(
+        runScenarioComparison(
+          comparisonBaseline,
+          comparisonConfig,
+          policyBundle.policy,
+          Math.max(1, mission.time - comparisonBaseline.time),
+        ),
+      );
+      setBusyAction(null);
+    }, 40);
+  }, [comparisonBaseline, comparisonConfig, mission.time, policyBundle.policy]);
 
   const changeMode = useCallback(
     (nextMode: AppMode) => {
@@ -1854,6 +1900,14 @@ export default function SkygridApp() {
                   results={batchResults}
                   onRun={runBatch}
                   busy={busyAction === 'batch'}
+                  scenarioResults={scenarioComparison}
+                  onCompare={runCurrentScenarioComparison}
+                  comparisonReady={
+                    Boolean(comparisonBaseline) &&
+                    !mission.running &&
+                    mission.time > (comparisonBaseline?.time ?? 0)
+                  }
+                  comparisonBusy={busyAction === 'compare'}
                 />
               )}
 
@@ -2211,10 +2265,18 @@ function ComparisonRail({
   results,
   onRun,
   busy,
+  scenarioResults,
+  onCompare,
+  comparisonReady,
+  comparisonBusy,
 }: {
   results: ReturnType<typeof runBatchEvaluation>;
   onRun: () => void;
   busy: boolean;
+  scenarioResults: ScenarioComparisonResult[] | null;
+  onCompare: () => void;
+  comparisonReady: boolean;
+  comparisonBusy: boolean;
 }) {
   return (
     <div className="rail-section comparison-section">
@@ -2287,6 +2349,55 @@ function ComparisonRail({
         <RefreshCw className={busy ? 'animate-spin' : ''} />
         {busy ? '100회 계산 중' : '무작위 100회 다시 평가'}
       </Button>
+      <div className="scenario-comparison">
+        <div className="section-heading mt-4">
+          <span>현재 시나리오 비교</span>
+          <span>{scenarioResults ? '동일 조건' : '실험 후'}</span>
+        </div>
+        {scenarioResults ? (
+          <div className="scenario-comparison-table">
+            <div className="scenario-comparison-head">
+              <span>방식</span>
+              <span>연속성</span>
+              <span>완료</span>
+              <span>공백</span>
+              <span>거리</span>
+              <span>회복</span>
+            </div>
+            {scenarioResults.map((result) => (
+              <div className="scenario-comparison-row" key={result.planner}>
+                <strong>{result.label}</strong>
+                <span>{result.continuity.toFixed(1)}%</span>
+                <span>{result.coverage.toFixed(0)}%</span>
+                <span>{result.weightedGapSeconds.toFixed(0)}</span>
+                <span>{result.distanceKm.toFixed(2)}</span>
+                <span>
+                  {result.recoverySeconds === null
+                    ? '—'
+                    : `${result.recoverySeconds.toFixed(0)}초`}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-inline">
+            {comparisonReady
+              ? '같은 조건으로 세 방식을 비교할 수 있습니다.'
+              : '실험을 시작하고 정지한 뒤 비교할 수 있습니다.'}
+          </div>
+        )}
+        <Button
+          variant="outline"
+          className="mt-3 h-8 w-full"
+          onClick={onCompare}
+          disabled={!comparisonReady || comparisonBusy}
+        >
+          <Route className={comparisonBusy ? 'animate-pulse' : ''} />
+          {comparisonBusy
+            ? '현재 시나리오 계산 중'
+            : '현재 시나리오 3방식 비교'}
+        </Button>
+      </div>
     </div>
   );
 }
