@@ -14,6 +14,7 @@ import type {
 } from './types';
 
 const CENTER = { lat: 36.6219, lng: 127.5032 };
+const RECHARGE_BATTERY = 82;
 const COLORS = [
   '#67e8f9',
   '#fbbf62',
@@ -76,6 +77,8 @@ export function createMission(
         color: COLORS[index % COLORS.length],
         lat: CENTER.lat + Math.sin(angle) * 0.003,
         lng: CENTER.lng + Math.cos(angle) * 0.004,
+        homeLat: CENTER.lat + Math.sin(angle) * 0.003,
+        homeLng: CENTER.lng + Math.cos(angle) * 0.004,
         speedMps: profile.speedMps,
         turnRateDps: profile.turnRateDps,
         battery: 82 - index * 2,
@@ -278,6 +281,37 @@ export function advanceMission(
   );
   const visitEvents: MissionEvent[] = [];
   const drones = next.drones.map((drone) => {
+    if (drone.status === 'returning') {
+      const home = { lat: drone.homeLat, lng: drone.homeLng };
+      const travel = drone.speedMps * deltaSeconds;
+      const distance = haversineMeters(drone, home);
+      const moved = Math.min(travel, distance);
+      const position = moveToward(drone, home, moved);
+      const updated = {
+        ...drone,
+        ...position,
+        battery: Math.max(
+          0,
+          drone.battery - (moved / 1000) * drone.consumptionPerKm,
+        ),
+        totalDistanceM: drone.totalDistanceM + moved,
+      };
+      if (distance <= travel + 1) {
+        updated.status = 'active';
+        updated.battery = RECHARGE_BATTERY;
+        updated.route = [];
+        updated.routeIndex = 0;
+        visitEvents.push(
+          makeEvent(
+            next.time,
+            'system',
+            `${drone.id} 재출격`,
+            '배터리 교체 완료 · 정찰 경로 재할당',
+          ),
+        );
+      }
+      return updated;
+    }
     if (drone.status !== 'active' || drone.routeIndex >= drone.route.length)
       return { ...drone };
     const target = waypointMap.get(drone.route[drone.routeIndex]);
@@ -332,16 +366,27 @@ export function advanceMission(
       config.planner,
       policy,
     );
+    const hasRemainingWaypoints = waypoints.length > 0;
+    const replannedDrones = planned.drones.map((drone) =>
+      hasRemainingWaypoints &&
+      drone.status === 'active' &&
+      drone.route.length === 0
+        ? { ...drone, status: 'returning' as const }
+        : drone,
+    );
     next = {
       ...next,
-      drones: planned.drones,
+      drones: replannedDrones,
       waypoints: planned.waypoints,
       replanCount: next.replanCount + 1,
     };
   } else {
     next = { ...next, drones, waypoints };
   }
-  const completed = next.time >= config.durationSec || active.length === 0;
+  const noAvailableDrones =
+    next.drones.length === 0 ||
+    next.drones.every((drone) => drone.status === 'failed');
+  const completed = next.time >= config.durationSec || noAvailableDrones;
   return {
     ...next,
     completed,

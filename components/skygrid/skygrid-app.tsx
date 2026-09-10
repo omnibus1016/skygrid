@@ -692,6 +692,8 @@ export default function SkygridApp() {
           nextNumber % 5
         ],
         ...point,
+        homeLat: point.lat,
+        homeLng: point.lng,
         speedMps: 11,
         turnRateDps: 140,
         battery: 82,

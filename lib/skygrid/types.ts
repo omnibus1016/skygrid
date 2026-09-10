@@ -32,6 +32,8 @@ export interface Drone extends GeoPoint {
   id: string;
   model: string;
   color: string;
+  homeLat: number;
+  homeLng: number;
   speedMps: number;
   turnRateDps: number;
   battery: number;
