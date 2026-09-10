@@ -40,6 +40,16 @@ interface Candidate {
   features: number[];
 }
 
+export interface PolicyWeights {
+  version: 1;
+  inputs: number;
+  hidden: number;
+  w1: number[][];
+  b1: number[];
+  w2: number[];
+  b2: number;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -119,6 +129,51 @@ export class CandidateDqn {
     copy.w2 = [...this.w2];
     copy.b2 = this.b2;
     return copy;
+  }
+
+  toWeights(): PolicyWeights {
+    return {
+      version: 1,
+      inputs: INPUTS,
+      hidden: HIDDEN,
+      w1: this.w1.map((row) => [...row]),
+      b1: [...this.b1],
+      w2: [...this.w2],
+      b2: this.b2,
+    };
+  }
+
+  static fromWeights(value: unknown): CandidateDqn | null {
+    if (!value || typeof value !== 'object') return null;
+    const weights = value as Partial<PolicyWeights>;
+    if (
+      weights.version !== 1 ||
+      weights.inputs !== INPUTS ||
+      weights.hidden !== HIDDEN ||
+      !Array.isArray(weights.w1) ||
+      !Array.isArray(weights.b1) ||
+      !Array.isArray(weights.w2) ||
+      typeof weights.b2 !== 'number' ||
+      weights.w1.length !== HIDDEN ||
+      weights.b1.length !== HIDDEN ||
+      weights.w2.length !== HIDDEN ||
+      weights.w1.some(
+        (row) =>
+          !Array.isArray(row) ||
+          row.length !== INPUTS ||
+          row.some((weight) => typeof weight !== 'number'),
+      ) ||
+      weights.b1.some((bias) => typeof bias !== 'number') ||
+      weights.w2.some((weight) => typeof weight !== 'number')
+    )
+      return null;
+
+    const policy = new CandidateDqn(() => 0.5);
+    policy.w1 = weights.w1.map((row) => [...row]);
+    policy.b1 = [...weights.b1];
+    policy.w2 = [...weights.w2];
+    policy.b2 = weights.b2;
+    return policy;
   }
 
   predict(features: number[]): number {

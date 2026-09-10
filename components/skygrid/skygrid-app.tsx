@@ -83,10 +83,15 @@ import {
   parseFlightCsv,
 } from '@/lib/skygrid/log-parser';
 import {
+  CandidateDqn,
   assignRoutes,
   plannerScore,
   trainDqnPolicy,
 } from '@/lib/skygrid/rl-policy';
+import {
+  PRETRAINED_POLICY_STATS,
+  PRETRAINED_POLICY_WEIGHTS,
+} from '@/lib/skygrid/pretrained-policy';
 import {
   advanceFieldMission,
   advanceMission,
@@ -105,6 +110,7 @@ import type {
   GeoPoint,
   MissionState,
   PlannerKind,
+  PolicyStats,
   ScenarioConfig,
   ScenarioComparisonResult,
   Waypoint,
@@ -135,6 +141,77 @@ const PLANNER_LABEL: Record<PlannerKind, string> = {
   nearest: '최근접 우선',
   priority: '중요도 우선',
 };
+
+type PolicyBundle = {
+  policy: CandidateDqn;
+  stats: PolicyStats;
+  origin: 'pretrained' | 'custom';
+  trainedAt: string | null;
+};
+
+const POLICY_STORAGE_KEY = 'skygrid-policy-v1';
+
+function createPretrainedPolicyBundle(): PolicyBundle {
+  const policy = CandidateDqn.fromWeights(PRETRAINED_POLICY_WEIGHTS);
+  if (!policy) throw new Error('기본 정책 가중치를 불러오지 못했습니다.');
+  return {
+    policy,
+    stats: PRETRAINED_POLICY_STATS,
+    origin: 'pretrained',
+    trainedAt: null,
+  };
+}
+
+function isPolicyStats(value: unknown): value is PolicyStats {
+  if (!value || typeof value !== 'object') return false;
+  const stats = value as Partial<PolicyStats>;
+  return (
+    typeof stats.episodes === 'number' &&
+    typeof stats.averageReward === 'number' &&
+    typeof stats.finalLoss === 'number' &&
+    typeof stats.epsilon === 'number' &&
+    Array.isArray(stats.rewardHistory)
+  );
+}
+
+function readSavedPolicyBundle(): PolicyBundle | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(POLICY_STORAGE_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as {
+      weights?: unknown;
+      stats?: unknown;
+      trainedAt?: unknown;
+    };
+    const policy = CandidateDqn.fromWeights(saved.weights);
+    if (!policy || !isPolicyStats(saved.stats)) return null;
+    return {
+      policy,
+      stats: saved.stats,
+      origin: 'custom',
+      trainedAt: typeof saved.trainedAt === 'string' ? saved.trainedAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePolicyBundle(bundle: PolicyBundle): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      POLICY_STORAGE_KEY,
+      JSON.stringify({
+        weights: bundle.policy.toWeights(),
+        stats: bundle.stats,
+        trainedAt: bundle.trainedAt,
+      }),
+    );
+  } catch {
+    // Private browsing or a full storage quota should not stop the mission UI.
+  }
+}
 
 type MapContextMenu = {
   x: number;
@@ -178,13 +255,14 @@ function downloadText(
 }
 
 export default function SkygridApp() {
-  const training = useMemo(() => trainDqnPolicy(700, 2026), []);
-  const [policyBundle, setPolicyBundle] = useState(training);
+  const [policyBundle, setPolicyBundle] = useState<PolicyBundle>(() =>
+    createPretrainedPolicyBundle(),
+  );
   const policyStats = policyBundle.stats;
   const [mode, setMode] = useState<AppMode>('simulation');
   const [config, setConfig] = useState<ScenarioConfig>(DEFAULT_CONFIG);
   const [mission, setMission] = useState(() =>
-    createMission(DEFAULT_CONFIG, training.policy),
+    createMission(DEFAULT_CONFIG, policyBundle.policy),
   );
   const [selectedDroneId, setSelectedDroneId] = useState('UAV-01');
   const [selectedWaypointId, setSelectedWaypointId] = useState('RP-01');
@@ -198,7 +276,7 @@ export default function SkygridApp() {
   const [selectedLogId, setSelectedLogId] = useState('DEMO-UAV-01');
   const [uploadError, setUploadError] = useState('');
   const [batchResults, setBatchResults] = useState(() =>
-    runBatchEvaluation(DEFAULT_CONFIG, training.policy, 48),
+    runBatchEvaluation(DEFAULT_CONFIG, policyBundle.policy, 48),
   );
   const [comparisonBaseline, setComparisonBaseline] =
     useState<MissionState | null>(null);
@@ -210,6 +288,7 @@ export default function SkygridApp() {
   const [busyAction, setBusyAction] = useState<
     'train' | 'batch' | 'compare' | null
   >(null);
+  const [trainingEpisodes, setTrainingEpisodes] = useState(1_000);
   const [dropoutDroneId, setDropoutDroneId] = useState('UAV-02');
   const [dropoutReason, setDropoutReason] = useState('통신 두절');
   const [mapBase, setMapBase] = useState<'satellite' | 'street'>('satellite');
@@ -218,6 +297,17 @@ export default function SkygridApp() {
   );
   const [droneStatusOpen, setDroneStatusOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const saved = readSavedPolicyBundle();
+    if (!saved) return;
+    const timer = window.setTimeout(() => {
+      setPolicyBundle(saved);
+      setMission(createMission(DEFAULT_CONFIG, saved.policy));
+      setBatchResults(runBatchEvaluation(DEFAULT_CONFIG, saved.policy, 48));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const metrics = useMemo(() => missionMetrics(mission), [mission]);
   const selectedDrone =
@@ -921,13 +1011,82 @@ export default function SkygridApp() {
     setBusyAction('train');
     window.setTimeout(() => {
       const next = trainDqnPolicy(
-        1_000,
+        trainingEpisodes,
         config.randomSeed + policyStats.episodes,
       );
-      setPolicyBundle(next);
+      const nextBundle: PolicyBundle = {
+        ...next,
+        origin: 'custom',
+        trainedAt: new Date().toISOString(),
+      };
+      savePolicyBundle(nextBundle);
+      setPolicyBundle(nextBundle);
+      setMission((current) => {
+        const planned = assignRoutes(
+          current.drones,
+          current.waypoints,
+          current.time,
+          config.planner,
+          next.policy,
+        );
+        return {
+          ...current,
+          drones: planned.drones,
+          waypoints: planned.waypoints,
+          replanCount: current.replanCount + 1,
+          events: [
+            {
+              id: 'policy-' + Date.now(),
+              time: current.time,
+              kind: 'replan' as const,
+              title: '새 AI 모델 적용',
+              detail:
+                trainingEpisodes.toLocaleString() +
+                '회 재학습 모델로 전체 경로를 갱신했습니다.',
+            },
+            ...current.events,
+          ].slice(0, 18),
+        };
+      });
       setBusyAction(null);
     }, 40);
-  }, [config.randomSeed, policyStats.episodes]);
+  }, [
+    config.planner,
+    config.randomSeed,
+    policyStats.episodes,
+    trainingEpisodes,
+  ]);
+
+  const restoreDefaultPolicy = useCallback(() => {
+    const next = createPretrainedPolicyBundle();
+    window.localStorage.removeItem(POLICY_STORAGE_KEY);
+    setPolicyBundle(next);
+    setMission((current) => {
+      const planned = assignRoutes(
+        current.drones,
+        current.waypoints,
+        current.time,
+        config.planner,
+        next.policy,
+      );
+      return {
+        ...current,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+        replanCount: current.replanCount + 1,
+        events: [
+          {
+            id: 'policy-default-' + Date.now(),
+            time: current.time,
+            kind: 'replan' as const,
+            title: '기본 AI 모델 복원',
+            detail: '사전학습 가중치로 전체 경로를 갱신했습니다.',
+          },
+          ...current.events,
+        ].slice(0, 18),
+      };
+    });
+  }, [config.planner]);
 
   const runBatch = useCallback(() => {
     setBusyAction('batch');
@@ -1935,6 +2094,14 @@ export default function SkygridApp() {
                       <div className="mt-1 text-xs text-slate-500">
                         13 입력 → 24 RELU → Q(s,a)
                       </div>
+                      <div className="mt-2 flex items-center gap-2 text-xs">
+                        <span className="text-slate-500">현재 모델</span>
+                        <Badge variant="outline">
+                          {policyBundle.origin === 'custom'
+                            ? '사용자 재학습'
+                            : '기본 사전학습'}
+                        </Badge>
+                      </div>
                     </div>
                     <Bot className="text-cyan-300" size={20} />
                   </div>
@@ -1998,6 +2165,26 @@ export default function SkygridApp() {
                     </div>
                   </dl>
                 </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-slate-400">
+                    새 모델 학습 횟수
+                  </span>
+                  <Select
+                    value={String(trainingEpisodes)}
+                    onValueChange={(value) =>
+                      setTrainingEpisodes(Number(value))
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-32 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1000">1,000회</SelectItem>
+                      <SelectItem value="2000">2,000회</SelectItem>
+                      <SelectItem value="5000">5,000회</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button
                   variant="outline"
                   className="mt-3 h-8 w-full"
@@ -2009,7 +2196,18 @@ export default function SkygridApp() {
                   />
                   {busyAction === 'train'
                     ? '정책 학습 중'
-                    : '1,000 에피소드 정책 재학습'}
+                    : trainingEpisodes.toLocaleString() + '회 새 모델 학습'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="mt-1 h-8 w-full text-xs text-slate-400"
+                  onClick={restoreDefaultPolicy}
+                  disabled={
+                    busyAction !== null || policyBundle.origin === 'pretrained'
+                  }
+                >
+                  <RefreshCw />
+                  기본 사전학습 모델로 복원
                 </Button>
               </details>
 
