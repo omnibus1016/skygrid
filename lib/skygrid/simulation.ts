@@ -1,6 +1,10 @@
 import { haversineMeters, moveToward, polylineDistance } from './geo';
 import { mulberry32 } from './random';
-import { assignRoutes, type CandidateDqn } from './rl-policy';
+import {
+  assignRoutes,
+  estimateSortieEnergy,
+  type CandidateDqn,
+} from './rl-policy';
 import type {
   BatchResult,
   Drone,
@@ -14,7 +18,12 @@ import type {
 } from './types';
 
 const CENTER = { lat: 36.6219, lng: 127.5032 };
-const RECHARGE_BATTERY = 82;
+const BASE = {
+  id: 'BASE-01',
+  name: '무인기 전개기지',
+  lat: CENTER.lat - 0.0094,
+  lng: CENTER.lng - 0.0118,
+};
 const COLORS = [
   '#67e8f9',
   '#fbbf62',
@@ -31,18 +40,30 @@ const MODELS = [
     speedMps: 10,
     turnRateDps: 120,
     consumptionPerKm: 9.6,
+    loiterConsumptionPerMin: 1.05,
+    maxBattery: 92,
+    reserveBattery: 20,
+    turnaroundSec: 45,
   },
   {
     model: 'DJI AVATA 2',
     speedMps: 12,
     turnRateDps: 180,
     consumptionPerKm: 13.8,
+    loiterConsumptionPerMin: 1.45,
+    maxBattery: 90,
+    reserveBattery: 22,
+    turnaroundSec: 50,
   },
   {
     model: 'SIM SCOUT-S',
     speedMps: 11,
     turnRateDps: 140,
     consumptionPerKm: 10.4,
+    loiterConsumptionPerMin: 1.15,
+    maxBattery: 90,
+    reserveBattery: 20,
+    turnaroundSec: 40,
   },
 ];
 
@@ -61,6 +82,51 @@ function makeEvent(
   };
 }
 
+function continuityAt(time: number, waypoints: Waypoint[]): number {
+  const priorityTotal = waypoints.reduce(
+    (sum, waypoint) => sum + waypoint.priority,
+    0,
+  );
+  if (!priorityTotal) return 100;
+  const coveredPriority = waypoints.reduce(
+    (sum, waypoint) =>
+      sum +
+      (time - waypoint.lastVisited <= waypoint.revisitSec
+        ? waypoint.priority
+        : 0),
+    0,
+  );
+  return (coveredPriority / priorityTotal) * 100;
+}
+
+function headingTo(from: Drone, to: { lat: number; lng: number }): number {
+  const y = Math.sin(((to.lng - from.lng) * Math.PI) / 180);
+  const x = Math.sin(((to.lat - from.lat) * Math.PI) / 180);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function returnEnergy(drone: Drone): number {
+  return (
+    (haversineMeters(drone, {
+      lat: drone.homeLat,
+      lng: drone.homeLng,
+    }) /
+      1000) *
+    drone.consumptionPerKm
+  );
+}
+
+function sendHome(drone: Drone): Drone {
+  return {
+    ...drone,
+    status: 'returning',
+    phase: 'return',
+    route: [],
+    routeIndex: 0,
+    dwellRemainingSec: 0,
+  };
+}
+
 export function createMission(
   config: ScenarioConfig,
   policy: CandidateDqn,
@@ -70,21 +136,29 @@ export function createMission(
     { length: config.droneCount },
     (_, index) => {
       const profile = MODELS[index % MODELS.length];
-      const angle = (index / config.droneCount) * Math.PI * 2;
+      const stagingOffset = (index - (config.droneCount - 1) / 2) * 0.00007;
       return {
         id: `UAV-${String(index + 1).padStart(2, '0')}`,
         model: profile.model,
         color: COLORS[index % COLORS.length],
-        lat: CENTER.lat + Math.sin(angle) * 0.003,
-        lng: CENTER.lng + Math.cos(angle) * 0.004,
-        homeLat: CENTER.lat + Math.sin(angle) * 0.003,
-        homeLng: CENTER.lng + Math.cos(angle) * 0.004,
+        lat: BASE.lat + stagingOffset,
+        lng: BASE.lng + stagingOffset * 0.7,
+        homeLat: BASE.lat,
+        homeLng: BASE.lng,
         speedMps: profile.speedMps,
         turnRateDps: profile.turnRateDps,
-        battery: 82 - index * 2,
-        reserveBattery: 22,
+        battery: profile.maxBattery,
+        reserveBattery: profile.reserveBattery,
         consumptionPerKm: profile.consumptionPerKm,
-        status: 'active',
+        loiterConsumptionPerMin: profile.loiterConsumptionPerMin,
+        maxBattery: profile.maxBattery,
+        turnaroundSec: profile.turnaroundSec,
+        turnaroundRemainingSec: 0,
+        dwellRemainingSec: 0,
+        phase: 'base',
+        sortieCount: 0,
+        minimumBattery: profile.maxBattery,
+        status: 'ready',
         route: [],
         routeIndex: 0,
         totalDistanceM: 0,
@@ -105,8 +179,8 @@ export function createMission(
         lat: CENTER.lat + Math.sin(angle) * radiusLat,
         lng: CENTER.lng + Math.cos(angle) * radiusLng,
         priority: 1 + Math.floor(random() * 5),
-        revisitSec: 90 + Math.floor(random() * 120),
-        dwellSec: 6 + Math.floor(random() * 8),
+        revisitSec: 120 + Math.floor(random() * 180),
+        dwellSec: 20 + Math.floor(random() * 31),
         lastVisited: 0,
         visitedCount: 0,
       };
@@ -132,16 +206,29 @@ export function createMission(
     failureTriggered: false,
     drones: planned.drones,
     waypoints: planned.waypoints,
+    base: { ...BASE },
     noFlyZones,
     events: [
       makeEvent(
         0,
         'system',
-        '시나리오 초기화',
-        `${config.droneCount}대 · 정찰지점 ${config.waypointCount}개`,
+        '가상 임무 준비',
+        `${config.droneCount}대 기지 대기 · 정찰지점 ${config.waypointCount}개`,
       ),
     ],
     weightedGapSeconds: 0,
+    continuityIntegral: 0,
+    continuityObservationSeconds: 0,
+    postFailureContinuityIntegral: 0,
+    postFailureObservationSeconds: 0,
+    minimumPostFailureContinuity: 100,
+    revisitChecks: 0,
+    onTimeRevisits: 0,
+    returnCount: 0,
+    reserveViolations: 0,
+    failureTime: null,
+    orphanedWaypointIds: [],
+    recoveredAt: null,
     replanCount: 0,
     inferenceMs: 0,
   };
@@ -156,27 +243,45 @@ export function triggerFailure(
 ): MissionState {
   const start = performance.now();
   const failed = state.drones.find(
-    (drone) => drone.id === droneId && drone.status === 'active',
+    (drone) => drone.id === droneId && drone.status !== 'failed',
   );
   if (!failed) return state;
-  const orphanedWaypoints = state.waypoints.filter(
-    (waypoint) => waypoint.assignedDrone === droneId,
-  ).length;
+  const orphanedWaypointIds = [
+    ...new Set([
+      ...failed.route.slice(failed.routeIndex),
+      ...state.waypoints
+        .filter((waypoint) => waypoint.assignedDrone === droneId)
+        .map((waypoint) => waypoint.id),
+    ]),
+  ];
   const drones = state.drones.map((drone) =>
     drone.id === droneId
-      ? { ...drone, status: 'failed' as const, route: [], routeIndex: 0 }
+      ? {
+          ...drone,
+          status: 'failed' as const,
+          route: [],
+          routeIndex: 0,
+          dwellRemainingSec: 0,
+        }
       : drone,
   );
-  const waypoints = state.waypoints.map((waypoint) =>
-    waypoint.assignedDrone === droneId
-      ? { ...waypoint, assignedDrone: undefined }
-      : { ...waypoint },
-  );
+  const waypoints = state.waypoints.map((waypoint) => ({
+    ...waypoint,
+    assignedDrone: undefined,
+  }));
   const planned = assignRoutes(drones, waypoints, state.time, planner, policy);
-  const inferenceMs = Math.max(1, performance.now() - start);
+  const inferenceMs = Math.max(0.1, performance.now() - start);
+  const currentContinuity = continuityAt(state.time, state.waypoints);
   return {
     ...state,
     failureTriggered: true,
+    failureTime: state.failureTime ?? state.time,
+    orphanedWaypointIds,
+    recoveredAt: orphanedWaypointIds.length ? null : state.time,
+    minimumPostFailureContinuity: Math.min(
+      state.minimumPostFailureContinuity,
+      currentContinuity,
+    ),
     drones: planned.drones,
     waypoints: planned.waypoints,
     replanCount: state.replanCount + 1,
@@ -185,8 +290,8 @@ export function triggerFailure(
       makeEvent(
         state.time,
         'replan',
-        'AI 임무 재계획 완료',
-        `${orphanedWaypoints}개 정찰지점 재할당 · ${planner.toUpperCase()} · ${inferenceMs.toFixed(1)} ms`,
+        '잔여 기체 경로 재계산',
+        `${orphanedWaypointIds.length}개 담당지점 재배정 · ${inferenceMs.toFixed(1)} ms`,
       ),
       makeEvent(
         state.time,
@@ -211,7 +316,18 @@ export function restoreDrone(
   if (!restored) return state;
   const drones = state.drones.map((drone) =>
     drone.id === droneId
-      ? { ...drone, status: 'active' as const, route: [], routeIndex: 0 }
+      ? {
+          ...drone,
+          lat: drone.homeLat,
+          lng: drone.homeLng,
+          battery: drone.maxBattery,
+          status: 'ready' as const,
+          phase: 'base' as const,
+          route: [],
+          routeIndex: 0,
+          dwellRemainingSec: 0,
+          turnaroundRemainingSec: 0,
+        }
       : drone,
   );
   const planned = assignRoutes(
@@ -223,7 +339,6 @@ export function restoreDrone(
   );
   return {
     ...state,
-    failureTriggered: planned.drones.some((drone) => drone.status === 'failed'),
     drones: planned.drones,
     waypoints: planned.waypoints,
     replanCount: state.replanCount + 1,
@@ -231,24 +346,21 @@ export function restoreDrone(
       makeEvent(
         state.time,
         'system',
-        `${droneId} 임무 복귀`,
-        '복귀 기체를 포함하여 전체 정찰경로를 다시 계산했습니다.',
+        `${droneId} 기지 복구`,
+        '배터리 교체 완료 · 다음 출격 경로 배정',
       ),
       ...state.events,
     ].slice(0, 18),
   };
 }
 
-/**
- * 현장 운용에서는 웹 앱이 DJI 기체를 직접 제어하거나 위치를 수신하지 않는다.
- * 따라서 임무 시계와 공백 지표만 갱신하며, 위치·배터리·정찰 완료는 운용자가 입력한다.
- */
 export function advanceFieldMission(
   state: MissionState,
   deltaSeconds: number,
 ): MissionState {
   if (!state.running || state.completed) return state;
   const time = state.time + deltaSeconds;
+  const continuity = continuityAt(time, state.waypoints);
   const weightedGapRate = state.waypoints.reduce(
     (sum, waypoint) =>
       sum +
@@ -262,6 +374,19 @@ export function advanceFieldMission(
     time,
     weightedGapSeconds:
       state.weightedGapSeconds + weightedGapRate * deltaSeconds,
+    continuityIntegral: state.continuityIntegral + continuity * deltaSeconds,
+    continuityObservationSeconds:
+      state.continuityObservationSeconds + deltaSeconds,
+    postFailureContinuityIntegral:
+      state.postFailureContinuityIntegral +
+      (state.failureTime === null ? 0 : continuity * deltaSeconds),
+    postFailureObservationSeconds:
+      state.postFailureObservationSeconds +
+      (state.failureTime === null ? 0 : deltaSeconds),
+    minimumPostFailureContinuity:
+      state.failureTime === null
+        ? state.minimumPostFailureContinuity
+        : Math.min(state.minimumPostFailureContinuity, continuity),
   };
 }
 
@@ -272,80 +397,265 @@ export function advanceMission(
   policy: CandidateDqn,
 ): MissionState {
   if (!state.running || state.completed) return state;
-  let next = { ...state, time: state.time + deltaSeconds };
-  if (!state.failureTriggered && next.time >= config.failureAt)
-    next = triggerFailure(next, config.failureDroneId, config.planner, policy);
+  let next: MissionState = { ...state, time: state.time + deltaSeconds };
+  if (!state.failureTriggered && next.time >= config.failureAt) {
+    next = triggerFailure(
+      next,
+      config.failureDroneId,
+      config.planner,
+      policy,
+      '설정된 이탈 시점',
+    );
+  }
 
   const waypointMap = new Map(
     next.waypoints.map((waypoint) => [waypoint.id, { ...waypoint }]),
   );
-  const visitEvents: MissionEvent[] = [];
-  const drones = next.drones.map((drone) => {
+  const tickEvents: MissionEvent[] = [];
+  let returnCount = next.returnCount;
+  let reserveViolations = next.reserveViolations;
+  let revisitChecks = next.revisitChecks;
+  let onTimeRevisits = next.onTimeRevisits;
+
+  let drones = next.drones.map((drone): Drone => {
+    if (drone.status === 'failed') return { ...drone };
+
+    if (drone.status === 'ready') {
+      const remaining = Math.max(
+        0,
+        drone.turnaroundRemainingSec - deltaSeconds,
+      );
+      if (remaining > 0) {
+        return { ...drone, turnaroundRemainingSec: remaining, phase: 'base' };
+      }
+      const replenished = {
+        ...drone,
+        lat: drone.homeLat,
+        lng: drone.homeLng,
+        battery: drone.maxBattery,
+        turnaroundRemainingSec: 0,
+        phase: 'base' as const,
+      };
+      if (drone.turnaroundRemainingSec > 0) {
+        tickEvents.push(
+          makeEvent(
+            next.time,
+            'system',
+            `${drone.id} 출격 준비 완료`,
+            `배터리 ${drone.maxBattery.toFixed(0)}%`,
+          ),
+        );
+      }
+      if (replenished.routeIndex < replenished.route.length) {
+        tickEvents.push(
+          makeEvent(
+            next.time,
+            'system',
+            `${drone.id} 기지 출격`,
+            `목표 ${replenished.route[replenished.routeIndex]} · ${replenished.sortieCount + 1}차 출격`,
+          ),
+        );
+        return {
+          ...replenished,
+          status: 'active',
+          phase: 'transit',
+          sortieCount: replenished.sortieCount + 1,
+        };
+      }
+      return replenished;
+    }
+
     if (drone.status === 'returning') {
       const home = { lat: drone.homeLat, lng: drone.homeLng };
       const travel = drone.speedMps * deltaSeconds;
       const distance = haversineMeters(drone, home);
       const moved = Math.min(travel, distance);
       const position = moveToward(drone, home, moved);
-      const updated = {
+      const battery = Math.max(
+        0,
+        drone.battery - (moved / 1000) * drone.consumptionPerKm,
+      );
+      const updated: Drone = {
         ...drone,
         ...position,
-        battery: Math.max(
-          0,
-          drone.battery - (moved / 1000) * drone.consumptionPerKm,
-        ),
+        heading: headingTo(drone, home),
+        battery,
+        minimumBattery: Math.min(drone.minimumBattery, battery),
         totalDistanceM: drone.totalDistanceM + moved,
       };
       if (distance <= travel + 1) {
-        updated.status = 'active';
-        updated.battery = RECHARGE_BATTERY;
-        updated.route = [];
-        updated.routeIndex = 0;
-        visitEvents.push(
+        returnCount += 1;
+        tickEvents.push(
           makeEvent(
             next.time,
             'system',
-            `${drone.id} 재출격`,
-            '배터리 교체 완료 · 정찰 경로 재할당',
+            `${drone.id} 기지 도착`,
+            `잔여 ${battery.toFixed(0)}% · 배터리 교체 ${drone.turnaroundSec}초`,
           ),
         );
+        return {
+          ...updated,
+          ...home,
+          status: 'ready',
+          phase: 'base',
+          route: [],
+          routeIndex: 0,
+          turnaroundRemainingSec: drone.turnaroundSec,
+        };
       }
       return updated;
     }
-    if (drone.status !== 'active' || drone.routeIndex >= drone.route.length)
-      return { ...drone };
+
     const target = waypointMap.get(drone.route[drone.routeIndex]);
-    if (!target) return { ...drone, routeIndex: drone.routeIndex + 1 };
+    if (!target) {
+      return { ...drone, phase: 'transit' };
+    }
+
+    if (drone.phase === 'dwell') {
+      const used = (drone.loiterConsumptionPerMin * deltaSeconds) / 60;
+      const battery = Math.max(0, drone.battery - used);
+      const remaining = Math.max(0, drone.dwellRemainingSec - deltaSeconds);
+      const updated: Drone = {
+        ...drone,
+        battery,
+        minimumBattery: Math.min(drone.minimumBattery, battery),
+        dwellRemainingSec: remaining,
+      };
+      if (remaining <= 0) {
+        const age = next.time - target.lastVisited;
+        if (target.visitedCount > 0) {
+          revisitChecks += 1;
+          if (age <= target.revisitSec) onTimeRevisits += 1;
+        }
+        target.lastVisited = next.time;
+        target.visitedCount += 1;
+        waypointMap.set(target.id, target);
+        tickEvents.push(
+          makeEvent(
+            next.time,
+            'visit',
+            `${drone.id} ${target.id} 정찰 완료`,
+            `${target.dwellSec}초 체공 · 방문 ${target.visitedCount}회`,
+          ),
+        );
+        return {
+          ...updated,
+          phase: 'transit',
+          dwellRemainingSec: 0,
+          routeIndex: drone.routeIndex + 1,
+        };
+      }
+      return updated;
+    }
+
+    const required = estimateSortieEnergy(drone, target);
+    if (drone.battery - required < drone.reserveBattery) {
+      if (drone.battery - returnEnergy(drone) < drone.reserveBattery) {
+        reserveViolations += 1;
+      }
+      tickEvents.push(
+        makeEvent(
+          next.time,
+          'warning',
+          `${drone.id} 기지 복귀`,
+          `목표 정찰·귀환 후 예비전력 확보 불가 · 잔여 ${drone.battery.toFixed(0)}%`,
+        ),
+      );
+      return sendHome(drone);
+    }
+
     const travel = drone.speedMps * deltaSeconds;
     const distance = haversineMeters(drone, target);
     const moved = Math.min(travel, distance);
     const position = moveToward(drone, target, moved);
-    const batteryUse = (moved / 1000) * drone.consumptionPerKm;
-    const updated = {
+    const battery = Math.max(
+      0,
+      drone.battery - (moved / 1000) * drone.consumptionPerKm,
+    );
+    const updated: Drone = {
       ...drone,
       ...position,
-      battery: Math.max(0, drone.battery - batteryUse),
+      heading: headingTo(drone, target),
+      battery,
+      minimumBattery: Math.min(drone.minimumBattery, battery),
       totalDistanceM: drone.totalDistanceM + moved,
     };
     if (distance <= travel + 1) {
-      target.lastVisited = next.time;
-      target.visitedCount += 1;
-      waypointMap.set(target.id, target);
-      updated.routeIndex += 1;
-      visitEvents.push(
+      tickEvents.push(
         makeEvent(
           next.time,
-          'visit',
-          `${drone.id} ${target.id} 정찰`,
-          `중요도 ${target.priority} · 방문 ${target.visitedCount}회`,
+          'system',
+          `${drone.id} ${target.id} 정찰 시작`,
+          `${target.dwellSec}초 체공`,
         ),
       );
+      return {
+        ...updated,
+        phase: 'dwell',
+        dwellRemainingSec: target.dwellSec,
+      };
     }
-    if (updated.battery <= updated.reserveBattery) updated.status = 'returning';
     return updated;
   });
 
-  const waypoints = [...waypointMap.values()];
+  let waypoints = [...waypointMap.values()];
+  const needsPlan = drones.some(
+    (drone) =>
+      (drone.status === 'active' &&
+        drone.phase !== 'dwell' &&
+        drone.routeIndex >= drone.route.length) ||
+      (drone.status === 'ready' &&
+        drone.turnaroundRemainingSec <= 0 &&
+        drone.routeIndex >= drone.route.length),
+  );
+
+  if (needsPlan && waypoints.length) {
+    const start = performance.now();
+    const planned = assignRoutes(
+      drones,
+      waypoints,
+      next.time,
+      config.planner,
+      policy,
+    );
+    const activeAtBase = (drone: Drone) =>
+      haversineMeters(drone, {
+        lat: drone.homeLat,
+        lng: drone.homeLng,
+      }) < 3;
+    drones = planned.drones.map((drone) => {
+      if (
+        drone.status === 'active' &&
+        drone.route.length === 0 &&
+        !activeAtBase(drone)
+      ) {
+        return sendHome(drone);
+      }
+      if (
+        drone.status === 'active' &&
+        drone.route.length === 0 &&
+        activeAtBase(drone)
+      ) {
+        return { ...drone, status: 'ready', phase: 'base' };
+      }
+      if (
+        drone.status === 'active' &&
+        drone.phase !== 'dwell' &&
+        drone.route.length > 0
+      ) {
+        return { ...drone, phase: 'transit' };
+      }
+      return drone;
+    });
+    waypoints = planned.waypoints;
+    next = {
+      ...next,
+      replanCount: next.replanCount + 1,
+      inferenceMs: Math.max(0.1, performance.now() - start),
+    };
+  }
+
+  const continuity = continuityAt(next.time, waypoints);
   const weightedGapRate = waypoints.reduce(
     (sum, waypoint) =>
       sum +
@@ -354,94 +664,125 @@ export function advanceMission(
         : 0),
     0,
   );
-  const active = drones.filter((drone) => drone.status === 'active');
-  const allRoutesDone =
-    active.length > 0 &&
-    active.every((drone) => drone.routeIndex >= drone.route.length);
-  if (allRoutesDone) {
-    const planned = assignRoutes(
-      drones,
-      waypoints,
-      next.time,
-      config.planner,
-      policy,
+  let recoveredAt = next.recoveredAt;
+  if (
+    recoveredAt === null &&
+    next.failureTime !== null &&
+    next.orphanedWaypointIds.length > 0 &&
+    next.orphanedWaypointIds.every(
+      (id) => (waypointMap.get(id)?.lastVisited ?? -1) >= next.failureTime!,
+    )
+  ) {
+    recoveredAt = next.time;
+    tickEvents.push(
+      makeEvent(
+        next.time,
+        'system',
+        '이탈 기체 담당구역 회복',
+        `${(next.time - next.failureTime).toFixed(0)}초`,
+      ),
     );
-    const hasRemainingWaypoints = waypoints.length > 0;
-    const replannedDrones = planned.drones.map((drone) =>
-      hasRemainingWaypoints &&
-      drone.status === 'active' &&
-      drone.route.length === 0
-        ? { ...drone, status: 'returning' as const }
-        : drone,
-    );
-    next = {
-      ...next,
-      drones: replannedDrones,
-      waypoints: planned.waypoints,
-      replanCount: next.replanCount + 1,
-    };
-  } else {
-    next = { ...next, drones, waypoints };
   }
-  const noAvailableDrones =
-    next.drones.length === 0 ||
-    next.drones.every((drone) => drone.status === 'failed');
+
+  const noAvailableDrones = drones.every((drone) => drone.status === 'failed');
   const completed = next.time >= config.durationSec || noAvailableDrones;
+  if (completed && !next.completed) {
+    tickEvents.push(
+      makeEvent(
+        Math.min(next.time, config.durationSec),
+        'system',
+        '가상 임무 종료',
+        noAvailableDrones ? '운용 가능 기체 없음' : '설정 임무시간 도달',
+      ),
+    );
+  }
+
   return {
     ...next,
+    time: Math.min(next.time, config.durationSec),
+    drones,
+    waypoints,
     completed,
     running: completed ? false : next.running,
     weightedGapSeconds:
       next.weightedGapSeconds + weightedGapRate * deltaSeconds,
-    events: [...visitEvents.reverse(), ...next.events].slice(0, 18),
+    continuityIntegral: next.continuityIntegral + continuity * deltaSeconds,
+    continuityObservationSeconds:
+      next.continuityObservationSeconds + deltaSeconds,
+    postFailureContinuityIntegral:
+      next.postFailureContinuityIntegral +
+      (next.failureTime === null ? 0 : continuity * deltaSeconds),
+    postFailureObservationSeconds:
+      next.postFailureObservationSeconds +
+      (next.failureTime === null ? 0 : deltaSeconds),
+    minimumPostFailureContinuity:
+      next.failureTime === null
+        ? next.minimumPostFailureContinuity
+        : Math.min(next.minimumPostFailureContinuity, continuity),
+    revisitChecks,
+    onTimeRevisits,
+    returnCount,
+    reserveViolations,
+    recoveredAt,
+    events: [...tickEvents.reverse(), ...next.events].slice(0, 18),
   };
 }
 
 export function missionMetrics(state: MissionState): MissionMetrics {
-  const priorityTotal = state.waypoints.reduce(
-    (sum, waypoint) => sum + waypoint.priority,
-    0,
-  );
-  const currentCoveredPriority = state.waypoints.reduce(
-    (sum, waypoint) =>
-      sum +
-      (state.time - waypoint.lastVisited <= waypoint.revisitSec
-        ? waypoint.priority
-        : 0),
-    0,
-  );
   const visited = state.waypoints.filter(
     (waypoint) => waypoint.visitedCount > 0,
   ).length;
-  const continuity = priorityTotal
-    ? (currentCoveredPriority / priorityTotal) * 100
-    : 100;
-  const failure = [...state.events]
-    .reverse()
-    .find((event) => event.kind === 'failure');
-  const firstVisitAfterFailure = failure
-    ? [...state.events]
-        .reverse()
-        .find((event) => event.kind === 'visit' && event.time >= failure.time)
-    : undefined;
+  const continuity = continuityAt(state.time, state.waypoints);
+  const averageContinuity = state.continuityObservationSeconds
+    ? state.continuityIntegral / state.continuityObservationSeconds
+    : continuity;
+  const operationalDrones = state.drones.filter(
+    (drone) => drone.status !== 'failed',
+  );
+  const priorityTime =
+    state.waypoints.reduce((sum, waypoint) => sum + waypoint.priority, 0) *
+    Math.max(1, state.time);
   return {
     continuity,
+    averageContinuity,
+    postFailureAverageContinuity: state.postFailureObservationSeconds
+      ? state.postFailureContinuityIntegral /
+        state.postFailureObservationSeconds
+      : null,
+    minimumPostFailureContinuity:
+      state.failureTime === null
+        ? continuity
+        : state.minimumPostFailureContinuity,
+    revisitCompliance: Math.max(
+      0,
+      100 * (1 - state.weightedGapSeconds / Math.max(1, priorityTime)),
+    ),
     coverage: state.waypoints.length
       ? (visited / state.waypoints.length) * 100
       : 0,
-    activeDrones: state.drones.filter((drone) => drone.status === 'active')
-      .length,
+    activeDrones: state.drones.filter(
+      (drone) => drone.status === 'active' || drone.status === 'returning',
+    ).length,
     weightedGapSeconds: state.weightedGapSeconds,
     recoverySeconds:
-      failure && firstVisitAfterFailure
-        ? firstVisitAfterFailure.time - failure.time
+      state.failureTime !== null && state.recoveredAt !== null
+        ? state.recoveredAt - state.failureTime
         : null,
     totalDistanceKm:
       state.drones.reduce((sum, drone) => sum + drone.totalDistanceM, 0) / 1000,
-    averageBattery: state.drones.length
-      ? state.drones.reduce((sum, drone) => sum + drone.battery, 0) /
-        state.drones.length
+    averageBattery: operationalDrones.length
+      ? operationalDrones.reduce((sum, drone) => sum + drone.battery, 0) /
+        operationalDrones.length
       : 0,
+    minimumBattery: operationalDrones.length
+      ? Math.min(...operationalDrones.map((drone) => drone.minimumBattery))
+      : 0,
+    returnCount: state.returnCount,
+    reserveViolations: state.reserveViolations,
+    sortieCount: state.drones.reduce(
+      (sum, drone) => sum + drone.sortieCount,
+      0,
+    ),
     completedVisits: state.waypoints.reduce(
       (sum, waypoint) => sum + waypoint.visitedCount,
       0,
@@ -456,7 +797,9 @@ function scoreAssignedPlan(
   let weightedGap = 0;
   let distanceM = 0;
   let completed = 0;
-  for (const drone of drones.filter((item) => item.status === 'active')) {
+  for (const drone of drones.filter(
+    (item) => item.status === 'active' || item.status === 'ready',
+  )) {
     let position = { lat: drone.lat, lng: drone.lng };
     let elapsed = 0;
     let battery = drone.battery;
@@ -464,13 +807,22 @@ function scoreAssignedPlan(
       const waypoint = waypoints.find((item) => item.id === waypointId);
       if (!waypoint) continue;
       const segment = haversineMeters(position, waypoint);
-      const use = (segment / 1000) * drone.consumptionPerKm;
-      if (battery - use < drone.reserveBattery) break;
-      elapsed += segment / drone.speedMps;
+      const transitUse = (segment / 1000) * drone.consumptionPerKm;
+      const dwellUse = (waypoint.dwellSec / 60) * drone.loiterConsumptionPerMin;
+      const homeUse =
+        (haversineMeters(waypoint, {
+          lat: drone.homeLat,
+          lng: drone.homeLng,
+        }) /
+          1000) *
+        drone.consumptionPerKm;
+      if (battery - transitUse - dwellUse - homeUse < drone.reserveBattery)
+        break;
+      elapsed += segment / drone.speedMps + waypoint.dwellSec;
       weightedGap +=
         Math.max(0, elapsed - waypoint.revisitSec) * waypoint.priority;
       distanceM += segment;
-      battery -= use;
+      battery -= transitUse + dwellUse;
       completed += 1;
       position = waypoint;
     }
@@ -544,6 +896,7 @@ export function runBatchEvaluation(
 export function cloneMissionState(state: MissionState): MissionState {
   return {
     ...state,
+    base: { ...state.base },
     drones: state.drones.map((drone) => ({
       ...drone,
       route: [...drone.route],
@@ -553,6 +906,7 @@ export function cloneMissionState(state: MissionState): MissionState {
       ...zone,
       points: zone.points.map((point) => ({ ...point })),
     })),
+    orphanedWaypointIds: [...state.orphanedWaypointIds],
     events: [...state.events],
   };
 }
@@ -571,16 +925,22 @@ export function runScenarioComparison(
   const validFailureDroneId =
     initialState.drones.find((drone) => drone.id === config.failureDroneId)
       ?.id ??
-    initialState.drones.find((drone) => drone.status === 'active')?.id;
+    initialState.drones.find((drone) => drone.status !== 'failed')?.id;
 
   return planners.map(({ kind, label }) => {
     const base = cloneMissionState(initialState);
     const drones = base.drones.map((drone) => ({
       ...drone,
       status:
-        drone.status === 'failed' ? ('failed' as const) : ('active' as const),
+        drone.status === 'failed'
+          ? ('failed' as const)
+          : drone.phase === 'base'
+            ? ('ready' as const)
+            : ('active' as const),
       route: [],
       routeIndex: 0,
+      dwellRemainingSec: 0,
+      turnaroundRemainingSec: 0,
     }));
     const waypoints = base.waypoints.map((waypoint) => ({
       ...waypoint,
@@ -588,6 +948,7 @@ export function runScenarioComparison(
     }));
     const plannerConfig: ScenarioConfig = {
       ...config,
+      durationSec: base.time + durationSeconds,
       planner: kind,
       ...(validFailureDroneId ? { failureDroneId: validFailureDroneId } : {}),
     };
@@ -601,6 +962,18 @@ export function runScenarioComparison(
       waypoints: planned.waypoints,
       events: [],
       weightedGapSeconds: 0,
+      continuityIntegral: 0,
+      continuityObservationSeconds: 0,
+      postFailureContinuityIntegral: 0,
+      postFailureObservationSeconds: 0,
+      minimumPostFailureContinuity: 100,
+      revisitChecks: 0,
+      onTimeRevisits: 0,
+      returnCount: 0,
+      reserveViolations: 0,
+      failureTime: null,
+      orphanedWaypointIds: [],
+      recoveredAt: null,
       replanCount: 0,
       inferenceMs: 0,
     };
@@ -617,12 +990,16 @@ export function runScenarioComparison(
     return {
       planner: kind,
       label,
-      continuity: metrics.continuity,
+      continuity:
+        metrics.postFailureAverageContinuity ?? metrics.averageContinuity,
+      revisitCompliance: metrics.revisitCompliance,
+      minimumPostFailureContinuity: metrics.minimumPostFailureContinuity,
       coverage: metrics.coverage,
       weightedGapSeconds: metrics.weightedGapSeconds,
       recoverySeconds: metrics.recoverySeconds,
       distanceKm: metrics.totalDistanceKm,
       averageBattery: metrics.averageBattery,
+      returnCount: metrics.returnCount,
     };
   });
 }

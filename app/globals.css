@@ -1284,6 +1284,47 @@ button {
   background: transparent;
   border: 0;
 }
+.uav-base-marker {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #f2c46e;
+  background: #161309e8;
+  color: #ffe2a4;
+  box-shadow:
+    0 0 0 4px #211a0fb8,
+    0 0 22px #e3ad3f3b;
+  transform: rotate(45deg);
+}
+.uav-base-marker::before,
+.uav-base-marker::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border: 1px solid #a9803f;
+}
+.uav-base-marker::after {
+  inset: 14px;
+  background: #e6b75c24;
+}
+.uav-base-marker span {
+  position: absolute;
+  inset: -7px;
+  border: 1px dashed #e1b45a8a;
+}
+.uav-base-marker b {
+  position: relative;
+  z-index: 1;
+  transform: rotate(-45deg);
+  font: 700 9px var(--font-geist-mono);
+  letter-spacing: 0.08em;
+}
+.base-tooltip {
+  border-color: #806331 !important;
+  color: #e9c982 !important;
+}
 .uav-map-marker {
   --uav-color: #67e8f9;
   --heading: 0deg;

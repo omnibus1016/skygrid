@@ -78,7 +78,11 @@ function MapViewport({ minLat, maxLat, minLng, maxLng }: ViewportBounds) {
         [minLat, minLng],
         [maxLat, maxLng],
       ]),
-      { padding: [52, 52], maxZoom: 16 },
+      {
+        paddingTopLeft: [58, 76],
+        paddingBottomRight: [58, 126],
+        maxZoom: 16,
+      },
     );
   }, [map, minLat, maxLat, minLng, maxLng]);
   return null;
@@ -100,6 +104,15 @@ function droneIcon(
   });
 }
 
+function baseIcon(): L.DivIcon {
+  return L.divIcon({
+    className: 'skygrid-leaflet-icon',
+    html: `<div class="uav-base-marker"><span></span><b>BASE</b></div>`,
+    iconSize: [52, 52],
+    iconAnchor: [26, 26],
+  });
+}
+
 export default function OperationalMap({
   mode,
   mapBase,
@@ -117,6 +130,10 @@ export default function OperationalMap({
     () =>
       mission.drones.flatMap((drone) => {
         if (drone.status === 'failed') return [];
+        if (drone.status === 'returning') {
+          const points = aStarRoute(drone, mission.base, mission.noFlyZones);
+          return [{ id: drone.id, color: drone.color, points }];
+        }
         const remaining = drone.route
           .slice(drone.routeIndex)
           .map((id) => mission.waypoints.find((waypoint) => waypoint.id === id))
@@ -135,7 +152,7 @@ export default function OperationalMap({
           ? [{ id: drone.id, color: drone.color, points: line }]
           : [];
       }),
-    [mission.drones, mission.waypoints, mission.noFlyZones],
+    [mission.drones, mission.waypoints, mission.base, mission.noFlyZones],
   );
 
   const mapPoints =
@@ -146,9 +163,10 @@ export default function OperationalMap({
               index % Math.max(1, Math.floor(log.points.length / 200)) === 0,
           ),
         )
-      : mission.waypoints.length
-        ? mission.waypoints
-        : mission.drones;
+      : [
+          mission.base,
+          ...(mission.waypoints.length ? mission.waypoints : mission.drones),
+        ];
   const viewportBounds: ViewportBounds | null = mapPoints.length
     ? {
         minLat: Math.min(...mapPoints.map((point) => point.lat)),
@@ -228,6 +246,25 @@ export default function OperationalMap({
           />
         ))}
 
+      {mode !== 'analysis' && (
+        <Marker
+          position={[mission.base.lat, mission.base.lng]}
+          icon={baseIcon()}
+          interactive={false}
+          zIndexOffset={-200}
+        >
+          <Tooltip
+            direction="top"
+            offset={[0, -24]}
+            className="tactical-tooltip base-tooltip"
+          >
+            <strong>{mission.base.id}</strong>
+            <br />
+            {mission.base.name}
+          </Tooltip>
+        </Marker>
+      )}
+
       {mission.waypoints.map((waypoint) => {
         const overdue =
           mission.time - waypoint.lastVisited > waypoint.revisitSec;
@@ -272,7 +309,9 @@ export default function OperationalMap({
             >
               <strong>{waypoint.id}</strong>
               <br />
-              중요도 {waypoint.priority} · 재방문 {waypoint.revisitSec}초
+              중요도 {waypoint.priority} · 정찰 {waypoint.dwellSec}초
+              <br />
+              재방문 {waypoint.revisitSec}초
             </Tooltip>
           </CircleMarker>
         );
@@ -316,6 +355,16 @@ export default function OperationalMap({
               {drone.model}
               <br />
               BAT {drone.battery.toFixed(1)}%
+              <br />
+              {drone.phase === 'dwell'
+                ? `정찰 중 ${Math.ceil(drone.dwellRemainingSec)}초`
+                : drone.status === 'returning'
+                  ? '기지 복귀 중'
+                  : drone.status === 'ready'
+                    ? drone.turnaroundRemainingSec > 0
+                      ? `출격 준비 ${Math.ceil(drone.turnaroundRemainingSec)}초`
+                      : '기지 대기'
+                    : '목표 이동 중'}
             </Tooltip>
           </Marker>
         ))}

@@ -518,7 +518,7 @@ export function missionFeatures(
   const distanceM = haversineMeters(drone, waypoint);
   const age = Math.max(0, missionTime - waypoint.lastVisited);
   const urgency = clamp(age / waypoint.revisitSec, 0, 2);
-  const expectedBatteryUse = (distanceM / 1000) * drone.consumptionPerKm;
+  const expectedBatteryUse = estimateSortieEnergy(drone, waypoint);
   const reserveSpan = Math.max(5, drone.battery - drone.reserveBattery);
   const peers = fleet.slice(1);
   const nearestPeerDistance = peers.length
@@ -551,6 +551,20 @@ export function missionFeatures(
     relativeAdvantage,
     localDensity,
   });
+}
+
+export function estimateSortieEnergy(drone: Drone, waypoint: Waypoint): number {
+  const transitEnergy =
+    (haversineMeters(drone, waypoint) / 1000) * drone.consumptionPerKm;
+  const dwellEnergy = (waypoint.dwellSec / 60) * drone.loiterConsumptionPerMin;
+  const returnEnergy =
+    (haversineMeters(waypoint, {
+      lat: drone.homeLat,
+      lng: drone.homeLng,
+    }) /
+      1000) *
+    drone.consumptionPerKm;
+  return transitEnergy + dwellEnergy + returnEnergy;
 }
 
 export function plannerScore(
@@ -586,6 +600,36 @@ export function assignRoutes(
   const virtual: Drone[] = active.map((drone) => ({ ...drone }));
   const pending = waypoints.map((waypoint) => ({ ...waypoint }));
 
+  for (const drone of virtual) {
+    const source = drones.find((candidate) => candidate.id === drone.id);
+    if (source?.phase !== 'dwell' && source?.phase !== 'transit') continue;
+    const currentId = source.route[source.routeIndex];
+    const targetIndex = pending.findIndex((target) => target.id === currentId);
+    if (targetIndex < 0) continue;
+    const target = pending[targetIndex];
+    const forwardEnergy =
+      source.phase === 'dwell'
+        ? (Math.max(0, source.dwellRemainingSec) / 60) *
+          drone.loiterConsumptionPerMin
+        : (haversineMeters(source, target) / 1000) * drone.consumptionPerKm +
+          (target.dwellSec / 60) * drone.loiterConsumptionPerMin;
+    const returnEnergy =
+      (haversineMeters(target, {
+        lat: drone.homeLat,
+        lng: drone.homeLng,
+      }) /
+        1000) *
+      drone.consumptionPerKm;
+    if (drone.battery - forwardEnergy - returnEnergy < drone.reserveBattery)
+      continue;
+    pending.splice(targetIndex, 1);
+    drone.route.push(target.id);
+    drone.battery -= forwardEnergy;
+    target.assignedDrone = drone.id;
+    const original = waypoints.find((waypoint) => waypoint.id === target.id);
+    if (original) original.assignedDrone = drone.id;
+  }
+
   while (pending.length && virtual.length) {
     let best: {
       droneIndex: number;
@@ -600,9 +644,8 @@ export function assignRoutes(
       ) {
         const drone = virtual[droneIndex];
         const target = pending[targetIndex];
-        const use =
-          (haversineMeters(drone, target) / 1000) * drone.consumptionPerKm;
-        if (drone.battery - use < drone.reserveBattery) continue;
+        const requiredEnergy = estimateSortieEnergy(drone, target);
+        if (drone.battery - requiredEnergy < drone.reserveBattery) continue;
         const score = plannerScore(
           kind,
           drone,
@@ -622,7 +665,9 @@ export function assignRoutes(
     const [target] = pending.splice(best.targetIndex, 1);
     drone.route.push(target.id);
     const transitDistance = haversineMeters(drone, target);
-    drone.battery -= (transitDistance / 1000) * drone.consumptionPerKm;
+    drone.battery -=
+      (transitDistance / 1000) * drone.consumptionPerKm +
+      (target.dwellSec / 60) * drone.loiterConsumptionPerMin;
     drone.lat = target.lat;
     drone.lng = target.lng;
     target.assignedDrone = drone.id;

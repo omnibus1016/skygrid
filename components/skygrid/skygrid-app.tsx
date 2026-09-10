@@ -143,6 +143,15 @@ const PLANNER_LABEL: Record<PlannerKind, string> = {
   priority: '중요도 우선',
 };
 
+function droneOperationalLabel(drone: Drone): string {
+  if (drone.status === 'failed') return '이탈';
+  if (drone.status === 'returning') return '기지 복귀';
+  if (drone.status === 'ready')
+    return drone.turnaroundRemainingSec > 0 ? '출격 준비' : '기지 대기';
+  if (drone.phase === 'dwell') return '지점 정찰';
+  return '목표 이동';
+}
+
 type PolicyBundle = {
   policy: CandidateDqn;
   stats: PolicyStats;
@@ -329,10 +338,10 @@ export default function SkygridApp() {
   const missionReady =
     mission.drones.length > 0 && mission.waypoints.length > 0;
   const activeDropoutDroneId = mission.drones.some(
-    (drone) => drone.id === dropoutDroneId && drone.status === 'active',
+    (drone) => drone.id === dropoutDroneId && drone.status !== 'failed',
   )
     ? dropoutDroneId
-    : (mission.drones.find((drone) => drone.status === 'active')?.id ?? '');
+    : (mission.drones.find((drone) => drone.status !== 'failed')?.id ?? '');
   const selectedLog = logs.find((log) => log.id === selectedLogId) ?? logs[0];
   const selectedLogMetrics = useMemo(
     () =>
@@ -640,7 +649,7 @@ export default function SkygridApp() {
           ...point,
           priority: 4,
           revisitSec: 150,
-          dwellSec: 8,
+          dwellSec: 30,
           lastVisited: current.time - 151,
           visitedCount: 0,
         };
@@ -692,13 +701,21 @@ export default function SkygridApp() {
           nextNumber % 5
         ],
         ...point,
-        homeLat: point.lat,
-        homeLng: point.lng,
+        homeLat: mission.base.lat,
+        homeLng: mission.base.lng,
         speedMps: 11,
         turnRateDps: 140,
         battery: 82,
         reserveBattery: 22,
         consumptionPerKm: 10.4,
+        loiterConsumptionPerMin: 1.15,
+        maxBattery: 90,
+        turnaroundSec: 40,
+        turnaroundRemainingSec: 0,
+        dwellRemainingSec: 0,
+        phase: 'transit',
+        sortieCount: 1,
+        minimumBattery: 82,
         status: 'active',
         route: [],
         routeIndex: 0,
@@ -740,7 +757,7 @@ export default function SkygridApp() {
       setInteraction('inspect');
       setMapContextMenu(null);
     },
-    [mission.drones, config.planner, policyBundle.policy],
+    [mission.drones, mission.base, config.planner, policyBundle.policy],
   );
 
   const handleMapClick = useCallback(
@@ -752,7 +769,25 @@ export default function SkygridApp() {
       } else if (interaction === 'move-drone' && selectedDroneId) {
         setMission((current) => {
           const drones = current.drones.map((drone) =>
-            drone.id === selectedDroneId ? { ...drone, ...point } : drone,
+            drone.id === selectedDroneId
+              ? {
+                  ...drone,
+                  ...point,
+                  status:
+                    drone.status === 'failed'
+                      ? ('failed' as const)
+                      : ('active' as const),
+                  phase:
+                    drone.status === 'failed'
+                      ? drone.phase
+                      : ('transit' as const),
+                  turnaroundRemainingSec: 0,
+                  sortieCount:
+                    drone.status === 'failed'
+                      ? drone.sortieCount
+                      : Math.max(1, drone.sortieCount),
+                }
+              : drone,
           );
           const planned = assignRoutes(
             drones,
@@ -1451,13 +1486,13 @@ export default function SkygridApp() {
                     <StepForward /> 10초 단위 진행
                   </Button>
                   {!missionReady && (
-                    <div className="empty-inline" role="status">
+                    <output className="empty-inline">
                       {!mission.drones.length && !mission.waypoints.length
                         ? '기체·정찰지점 필요'
                         : !mission.drones.length
                           ? '기체 필요'
                           : '정찰지점 필요'}
-                    </div>
+                    </output>
                   )}
                 </div>
 
@@ -1666,7 +1701,7 @@ export default function SkygridApp() {
                       <div>
                         <strong>{selectedDrone.model}</strong>
                         <span>
-                          {selectedDrone.status.toUpperCase()} ·{' '}
+                          {droneOperationalLabel(selectedDrone)} ·{' '}
                           {selectedDrone.speedMps} m/s
                         </span>
                       </div>
@@ -1942,6 +1977,7 @@ export default function SkygridApp() {
               <div
                 className="map-context-menu"
                 role="menu"
+                tabIndex={-1}
                 aria-label="지도 편집 메뉴"
                 onContextMenu={(event) => event.preventDefault()}
                 style={
@@ -2026,9 +2062,7 @@ export default function SkygridApp() {
               <DialogContent className="drone-status-dialog">
                 <DialogHeader>
                   <DialogTitle>기체 현황</DialogTitle>
-                  <DialogDescription>
-                    현재 시뮬레이션 상태를 기준으로 한 기체별 정보입니다.
-                  </DialogDescription>
+                  <DialogDescription>기체별 운용 상태</DialogDescription>
                 </DialogHeader>
                 <div className="drone-status-table" aria-label="기체 현황표">
                   <div className="drone-status-head">
@@ -2041,14 +2075,7 @@ export default function SkygridApp() {
                   </div>
                   {mission.drones.map((drone) => {
                     const targetId = drone.route[drone.routeIndex];
-                    const statusLabel =
-                      drone.status === 'active'
-                        ? '임무 수행'
-                        : drone.status === 'failed'
-                          ? '이탈'
-                          : drone.status === 'returning'
-                            ? '복귀 중'
-                            : '대기';
+                    const statusLabel = droneOperationalLabel(drone);
                     return (
                       <button
                         key={drone.id}
@@ -2071,7 +2098,13 @@ export default function SkygridApp() {
                             ? '—'
                             : `${drone.speedMps} m/s`}
                         </span>
-                        <span>{targetId ?? '대기'}</span>
+                        <span>
+                          {drone.status === 'returning'
+                            ? mission.base.id
+                            : drone.phase === 'dwell'
+                              ? `${targetId} (${Math.ceil(drone.dwellRemainingSec)}초)`
+                              : (targetId ?? '대기')}
+                        </span>
                         <span className="drone-position">
                           {drone.lat.toFixed(5)}, {drone.lng.toFixed(5)}
                         </span>
@@ -2144,42 +2177,57 @@ export default function SkygridApp() {
                       className="metric-ring"
                       style={
                         {
-                          '--value': `${metrics.continuity * 3.6}deg`,
+                          '--value': `${(metrics.postFailureAverageContinuity ?? 0) * 3.6}deg`,
                         } as React.CSSProperties
                       }
                     >
-                      <span>{metrics.continuity.toFixed(0)}</span>
-                      <small>%</small>
+                      <span>
+                        {metrics.postFailureAverageContinuity === null
+                          ? '—'
+                          : metrics.postFailureAverageContinuity.toFixed(0)}
+                      </span>
+                      {metrics.postFailureAverageContinuity !== null && (
+                        <small>%</small>
+                      )}
                     </div>
                     <div>
                       <div className="text-sm font-semibold text-slate-100">
-                        정찰 임무 연속성
+                        이탈 후 평균 연속성
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        중요도 가중 현재 충족률
+                        기체 이탈 이후 기준
                       </div>
                     </div>
                   </div>
                   <div className="mission-progress">
                     <div>
-                      <span>최초 정찰 완료율</span>
-                      <strong>{metrics.coverage.toFixed(0)}%</strong>
+                      <span>재방문 기한 준수율</span>
+                      <strong>{metrics.revisitCompliance.toFixed(0)}%</strong>
                     </div>
                     <Progress
-                      value={metrics.coverage}
+                      value={metrics.revisitCompliance}
                       className="h-1.5 bg-white/10"
                     />
                   </div>
                   <div className="metric-grid">
                     <MetricCard
-                      icon={<Clock3 />}
-                      label="가중 공백"
-                      value={`${metrics.weightedGapSeconds.toFixed(0)} p·s`}
-                      tone={metrics.weightedGapSeconds > 100 ? 'amber' : 'cyan'}
+                      icon={<Activity />}
+                      label="이탈 후 최저 연속성"
+                      value={
+                        mission.failureTime === null
+                          ? '—'
+                          : `${metrics.minimumPostFailureContinuity.toFixed(0)} %`
+                      }
+                      tone={
+                        mission.failureTime !== null &&
+                        metrics.minimumPostFailureContinuity < 70
+                          ? 'amber'
+                          : 'cyan'
+                      }
                     />
                     <MetricCard
                       icon={<TimerReset />}
-                      label="공백 회복"
+                      label="담당구역 회복"
                       value={
                         metrics.recoverySeconds === null
                           ? '—'
@@ -2193,15 +2241,27 @@ export default function SkygridApp() {
                       value={`${metrics.totalDistanceKm.toFixed(2)} km`}
                     />
                     <MetricCard
-                      icon={<Activity />}
-                      label="정찰 횟수"
-                      value={`${metrics.completedVisits}`}
+                      icon={<Route />}
+                      label="기지 복귀"
+                      value={`${metrics.returnCount} 회`}
                     />
                     <MetricCard
                       icon={<BatteryMedium />}
-                      label="평균 배터리"
-                      value={`${metrics.averageBattery.toFixed(0)} %`}
-                      tone={metrics.averageBattery < 35 ? 'red' : 'cyan'}
+                      label="최저 배터리"
+                      value={`${metrics.minimumBattery.toFixed(0)} %`}
+                      tone={
+                        metrics.minimumBattery < 20
+                          ? 'red'
+                          : metrics.minimumBattery < 30
+                            ? 'amber'
+                            : 'cyan'
+                      }
+                    />
+                    <MetricCard
+                      icon={<ShieldCheck />}
+                      label="예비전력 위반"
+                      value={`${metrics.reserveViolations} 회`}
+                      tone={metrics.reserveViolations ? 'red' : 'cyan'}
                     />
                   </div>
                 </div>
@@ -2566,7 +2626,7 @@ function EvaluationWorkspace({
               </div>
               <div>
                 <strong>02</strong>
-                <span>연속성·완료율·공백 기록</span>
+                <span>이탈 후 연속성·재방문·회복시간</span>
               </div>
               <div>
                 <strong>03</strong>
@@ -2602,7 +2662,7 @@ function DropoutControl({
   onReasonChange: (value: string) => void;
   onExecute: () => void;
 }) {
-  const activeDrones = drones.filter((drone) => drone.status === 'active');
+  const activeDrones = drones.filter((drone) => drone.status !== 'failed');
   return (
     <div className="rail-section dropout-control">
       <div className="section-heading">
@@ -2717,6 +2777,15 @@ function WaypointEditor({
         onChange={(priority) => onChange({ priority })}
       />
       <ParameterSlider
+        label="지점 정찰시간"
+        value={selected.dwellSec}
+        suffix="초"
+        min={10}
+        max={180}
+        step={10}
+        onChange={(dwellSec) => onChange({ dwellSec })}
+      />
+      <ParameterSlider
         label="재방문 한계"
         value={selected.revisitSec}
         suffix="초"
@@ -2819,7 +2888,7 @@ function ComparisonRail({
             />
             <Bar
               dataKey="completion"
-              name="완료율 %"
+              name="경로 배정률 %"
               fill="#fbbf62"
               radius={[2, 2, 0, 0]}
             />
@@ -2853,24 +2922,24 @@ function ComparisonRail({
           <div className="scenario-comparison-table">
             <div className="scenario-comparison-head">
               <span>방식</span>
-              <span>연속성</span>
-              <span>완료</span>
-              <span>공백</span>
-              <span>거리</span>
+              <span>평균</span>
+              <span>재방문</span>
+              <span>최저</span>
               <span>회복</span>
+              <span>거리</span>
             </div>
             {scenarioResults.map((result) => (
               <div className="scenario-comparison-row" key={result.planner}>
                 <strong>{result.label}</strong>
                 <span>{result.continuity.toFixed(1)}%</span>
-                <span>{result.coverage.toFixed(0)}%</span>
-                <span>{result.weightedGapSeconds.toFixed(0)}</span>
-                <span>{result.distanceKm.toFixed(2)}</span>
+                <span>{result.revisitCompliance.toFixed(0)}%</span>
+                <span>{result.minimumPostFailureContinuity.toFixed(0)}%</span>
                 <span>
                   {result.recoverySeconds === null
                     ? '—'
                     : `${result.recoverySeconds.toFixed(0)}초`}
                 </span>
+                <span>{result.distanceKm.toFixed(2)}</span>
               </div>
             ))}
           </div>

@@ -6,10 +6,16 @@ export type AppMode =
   | 'training';
 export type PlannerKind = 'rl' | 'nearest' | 'priority';
 export type DroneStatus = 'ready' | 'active' | 'failed' | 'returning';
+export type DronePhase = 'base' | 'transit' | 'dwell' | 'return';
 
 export interface GeoPoint {
   lat: number;
   lng: number;
+}
+
+export interface MissionBase extends GeoPoint {
+  id: string;
+  name: string;
 }
 
 export interface Waypoint extends GeoPoint {
@@ -39,6 +45,14 @@ export interface Drone extends GeoPoint {
   battery: number;
   reserveBattery: number;
   consumptionPerKm: number;
+  loiterConsumptionPerMin: number;
+  maxBattery: number;
+  turnaroundSec: number;
+  turnaroundRemainingSec: number;
+  dwellRemainingSec: number;
+  phase: DronePhase;
+  sortieCount: number;
+  minimumBattery: number;
   status: DroneStatus;
   route: string[];
   routeIndex: number;
@@ -73,21 +87,42 @@ export interface MissionState {
   failureTriggered: boolean;
   drones: Drone[];
   waypoints: Waypoint[];
+  base: MissionBase;
   noFlyZones: NoFlyZone[];
   events: MissionEvent[];
   weightedGapSeconds: number;
+  continuityIntegral: number;
+  continuityObservationSeconds: number;
+  postFailureContinuityIntegral: number;
+  postFailureObservationSeconds: number;
+  minimumPostFailureContinuity: number;
+  revisitChecks: number;
+  onTimeRevisits: number;
+  returnCount: number;
+  reserveViolations: number;
+  failureTime: number | null;
+  orphanedWaypointIds: string[];
+  recoveredAt: number | null;
   replanCount: number;
   inferenceMs: number;
 }
 
 export interface MissionMetrics {
   continuity: number;
+  averageContinuity: number;
+  postFailureAverageContinuity: number | null;
+  minimumPostFailureContinuity: number;
+  revisitCompliance: number;
   coverage: number;
   activeDrones: number;
   weightedGapSeconds: number;
   recoverySeconds: number | null;
   totalDistanceKm: number;
   averageBattery: number;
+  minimumBattery: number;
+  returnCount: number;
+  reserveViolations: number;
+  sortieCount: number;
   completedVisits: number;
 }
 
@@ -145,9 +180,12 @@ export interface ScenarioComparisonResult {
   planner: PlannerKind;
   label: string;
   continuity: number;
+  revisitCompliance: number;
+  minimumPostFailureContinuity: number;
   coverage: number;
   weightedGapSeconds: number;
   recoverySeconds: number | null;
   distanceKm: number;
   averageBattery: number;
+  returnCount: number;
 }
