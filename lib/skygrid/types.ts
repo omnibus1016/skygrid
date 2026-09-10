@@ -55,6 +55,7 @@ export interface MissionEvent {
 export interface ScenarioConfig {
   droneCount: number;
   waypointCount: number;
+  durationSec: number;
   failureAt: number;
   failureDroneId: string;
   planner: PlannerKind;

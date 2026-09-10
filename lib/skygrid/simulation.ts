@@ -341,7 +341,7 @@ export function advanceMission(
   } else {
     next = { ...next, drones, waypoints };
   }
-  const completed = next.time >= 600 || active.length === 0;
+  const completed = next.time >= config.durationSec || active.length === 0;
   return {
     ...next,
     completed,
@@ -516,7 +516,7 @@ export function runScenarioComparison(
   initialState: MissionState,
   config: ScenarioConfig,
   policy: CandidateDqn,
-  durationSeconds = 600,
+  durationSeconds = config.durationSec,
 ): ScenarioComparisonResult[] {
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },

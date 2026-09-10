@@ -128,6 +128,7 @@ const OperationalMap = dynamic(() => import('./operational-map'), {
 const DEFAULT_CONFIG: ScenarioConfig = {
   droneCount: 4,
   waypointCount: 20,
+  durationSec: 600,
   failureAt: 90,
   failureDroneId: 'UAV-02',
   planner: 'rl',
@@ -411,13 +412,53 @@ export default function SkygridApp() {
     [config, policyBundle.policy],
   );
 
+  const replaySimulation = useCallback(() => {
+    if (!missionReady) return;
+    const base = comparisonBaseline
+      ? cloneMissionState(comparisonBaseline)
+      : createMission(config, policyBundle.policy);
+    const replay = {
+      ...base,
+      running: true,
+      completed: false,
+      events: [
+        {
+          id: `replay-${Date.now()}`,
+          time: 0,
+          kind: 'system' as const,
+          title: '가상 정찰 임무 재시작',
+          detail: `초기 위치·배터리·정찰 상태 복원 · ${config.simRate}배속`,
+        },
+        ...base.events,
+      ].slice(0, 18),
+    };
+    setMission(replay);
+    setSelectedDroneId(replay.drones[0]?.id ?? '');
+    setSelectedWaypointId(replay.waypoints[0]?.id ?? '');
+    setSelectedMapEntity('waypoint');
+    setInteraction('inspect');
+    setComparisonBaseline(cloneMissionState(base));
+    setComparisonConfig({ ...config });
+    setScenarioComparison(null);
+  }, [comparisonBaseline, config, missionReady, policyBundle.policy]);
+
   const applySimulationSettings = useCallback(() => {
     const start = performance.now();
+    const durationSec = Math.max(60, config.durationSec);
+    const failureAt = Math.min(
+      config.failureAt,
+      Math.max(30, durationSec - 10),
+    );
     const failureDroneId =
       mission.drones.find((drone) => drone.id === config.failureDroneId)?.id ??
       mission.drones.find((drone) => drone.status === 'active')?.id ??
       config.failureDroneId;
-    setConfig((currentConfig) => ({ ...currentConfig, failureDroneId }));
+    setConfig((currentConfig) => ({
+      ...currentConfig,
+      durationSec,
+      failureAt,
+      failureDroneId,
+    }));
     setComparisonBaseline(null);
     setComparisonConfig(null);
     setScenarioComparison(null);
@@ -441,13 +482,14 @@ export default function SkygridApp() {
             time: current.time,
             kind: 'system' as const,
             title: '실험 설정 적용',
-            detail: `이탈 ${formatMissionTime(config.failureAt)} · ${config.simRate}배속 · ${PLANNER_LABEL[config.planner]}`,
+            detail: `임무 ${formatMissionTime(durationSec)} · 이탈 ${formatMissionTime(failureAt)} · ${config.simRate}배속 · ${PLANNER_LABEL[config.planner]}`,
           },
           ...current.events,
         ].slice(0, 18),
       };
     });
   }, [
+    config.durationSec,
     config.failureAt,
     config.failureDroneId,
     config.planner,
@@ -522,7 +564,12 @@ export default function SkygridApp() {
 
   const toggleMission = useCallback(() => {
     if (!mission.running && !missionReady) return;
-    if (!mission.running && mode === 'simulation') {
+    if (
+      !mission.running &&
+      !mission.completed &&
+      mode === 'simulation' &&
+      !comparisonBaseline
+    ) {
       setComparisonBaseline(cloneMissionState(mission));
       setComparisonConfig({ ...config });
       setScenarioComparison(null);
@@ -554,7 +601,7 @@ export default function SkygridApp() {
         ].slice(0, 18),
       };
     });
-  }, [config, cloneMissionState, mission, missionReady, mode]);
+  }, [comparisonBaseline, config, mission, missionReady, mode]);
 
   const stepSimulation = useCallback(() => {
     if (!missionReady) return;
@@ -616,7 +663,7 @@ export default function SkygridApp() {
               time: current.time,
               kind: 'replan' as const,
               title: `${waypoint.id} 정찰지점 추가`,
-              detail: '새 지점을 포함하여 AI 경로를 다시 계산했습니다.',
+              detail: '정찰지점 추가 · 경로 갱신',
             },
             ...current.events,
           ].slice(0, 18),
@@ -682,7 +729,7 @@ export default function SkygridApp() {
               time: current.time,
               kind: 'replan' as const,
               title: `${droneId} 기체 추가`,
-              detail: '새 기체를 포함하여 AI 경로를 다시 계산했습니다.',
+              detail: '기체 추가 · 경로 갱신',
             },
             ...current.events,
           ].slice(0, 18),
@@ -723,7 +770,7 @@ export default function SkygridApp() {
                 time: current.time,
                 kind: 'system' as const,
                 title: `${selectedDroneId} 위치 업데이트`,
-                detail: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)} · AI 경로 재계산`,
+                detail: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)} · 경로 갱신`,
               },
               ...current.events,
             ].slice(0, 18),
@@ -774,7 +821,7 @@ export default function SkygridApp() {
               time: current.time,
               kind: 'warning' as const,
               title: `${waypointId} 정찰지점 삭제`,
-              detail: '남은 정찰지점으로 경로를 다시 계산했습니다.',
+              detail: '잔여 정찰지점 · 경로 갱신',
             },
             ...current.events,
           ].slice(0, 18),
@@ -928,7 +975,7 @@ export default function SkygridApp() {
             time: current.time,
             kind: 'visit' as const,
             title: `${selectedWaypointId} 정찰 완료 보고`,
-            detail: `${selectedDroneId || '운용 기체'} 관측 결과 반영 · 후속 경로 재계산`,
+            detail: `${selectedDroneId || '운용 기체'} 관측 결과 반영 · 후속 경로 갱신`,
           },
           ...current.events,
         ].slice(0, 18),
@@ -1049,10 +1096,10 @@ export default function SkygridApp() {
                   id: 'policy-' + Date.now(),
                   time: current.time,
                   kind: 'replan' as const,
-                  title: '새 AI 모델 적용',
+                  title: '새 모델 적용',
                   detail:
                     trainingEpisodes.toLocaleString() +
-                    '회 재학습 모델로 전체 경로를 갱신했습니다.',
+                    '회 학습 모델 · 전체 경로 갱신',
                 },
                 ...current.events,
               ].slice(0, 18),
@@ -1094,8 +1141,8 @@ export default function SkygridApp() {
             id: 'policy-default-' + Date.now(),
             time: current.time,
             kind: 'replan' as const,
-            title: '기본 AI 모델 복원',
-            detail: '사전학습 가중치로 전체 경로를 갱신했습니다.',
+            title: '기본 모델 복원',
+            detail: '기본 가중치 · 전체 경로 갱신',
           },
           ...current.events,
         ].slice(0, 18),
@@ -1179,14 +1226,14 @@ export default function SkygridApp() {
         {
           name: 'skygrid_configure_scenario',
           title: 'SKYGRID 시나리오 설정',
-          description:
-            '가상 실험의 기체 수, 정찰지점 수, 기체 이탈 시점을 설정하고 화면에 적용합니다.',
+          description: '기체 수·정찰지점 수·이탈 시점 설정',
           inputSchema: {
             type: 'object',
             properties: {
               droneCount: { type: 'number', minimum: 2, maximum: 10 },
               waypointCount: { type: 'number', minimum: 6, maximum: 30 },
-              failureAt: { type: 'number', minimum: 30, maximum: 480 },
+              durationSec: { type: 'number', minimum: 60, maximum: 7200 },
+              failureAt: { type: 'number', minimum: 30, maximum: 7140 },
             },
             required: ['droneCount', 'waypointCount', 'failureAt'],
             additionalProperties: false,
@@ -1196,13 +1243,22 @@ export default function SkygridApp() {
             const value = input as {
               droneCount: number;
               waypointCount: number;
+              durationSec?: number;
               failureAt: number;
             };
+            const durationSec = Math.min(
+              7200,
+              Math.max(60, value.durationSec ?? config.durationSec),
+            );
             const next = {
               ...config,
               droneCount: value.droneCount,
               waypointCount: value.waypointCount,
-              failureAt: value.failureAt,
+              durationSec,
+              failureAt: Math.min(
+                value.failureAt,
+                Math.max(30, durationSec - 10),
+              ),
               failureDroneId: 'UAV-02',
             };
             setConfig(next);
@@ -1217,7 +1273,7 @@ export default function SkygridApp() {
         {
           name: 'skygrid_start_simulation',
           title: 'SKYGRID 시뮬레이션 시작',
-          description: '현재 설정된 가상 정찰 임무 시뮬레이션을 시작합니다.',
+          description: '현재 가상 임무 시작',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -1236,8 +1292,7 @@ export default function SkygridApp() {
         {
           name: 'skygrid_trigger_dropout',
           title: '무인기 이탈 처리',
-          description:
-            '지정한 무인기를 임무에서 이탈시키고 다중 에이전트 DQN으로 잔여 기체 임무를 재계획합니다.',
+          description: '지정 기체 이탈 처리 · 잔여 임무 재계획',
           inputSchema: {
             type: 'object',
             properties: { droneId: { type: 'string' } },
@@ -1354,11 +1409,23 @@ export default function SkygridApp() {
                   <div className="button-pair">
                     <Button
                       className="primary-command"
-                      onClick={toggleMission}
-                      disabled={!mission.running && !missionReady}
+                      onClick={
+                        mission.completed ? replaySimulation : toggleMission
+                      }
+                      disabled={!missionReady}
                     >
-                      {mission.running ? <Pause /> : <Play />}
-                      {mission.running ? '일시 정지' : '실험 시작'}
+                      {mission.completed ? (
+                        <RefreshCw />
+                      ) : mission.running ? (
+                        <Pause />
+                      ) : (
+                        <Play />
+                      )}
+                      {mission.completed
+                        ? '다시 실험'
+                        : mission.running
+                          ? '일시 정지'
+                          : '실험 시작'}
                     </Button>
                     <Button
                       variant="outline"
@@ -1384,10 +1451,10 @@ export default function SkygridApp() {
                   {!missionReady && (
                     <div className="empty-inline" role="status">
                       {!mission.drones.length && !mission.waypoints.length
-                        ? '기체와 정찰지점을 추가해야 임무를 시작할 수 있습니다.'
+                        ? '기체·정찰지점 필요'
                         : !mission.drones.length
-                          ? '기체를 추가해야 임무를 시작할 수 있습니다.'
-                          : '정찰지점을 추가해야 임무를 시작할 수 있습니다.'}
+                          ? '기체 필요'
+                          : '정찰지점 필요'}
                     </div>
                   )}
                 </div>
@@ -1440,10 +1507,31 @@ export default function SkygridApp() {
                     value={config.failureAt}
                     suffix="초"
                     min={30}
-                    max={360}
+                    max={Math.max(30, config.durationSec - 10)}
                     step={10}
                     onChange={(value) =>
                       setConfig((current) => ({ ...current, failureAt: value }))
+                    }
+                  />
+                  <ParameterSlider
+                    label="임무 시간"
+                    value={Math.round(config.durationSec / 60)}
+                    suffix="분"
+                    min={1}
+                    max={120}
+                    step={1}
+                    onChange={(value) =>
+                      setConfig((current) => {
+                        const durationSec = value * 60;
+                        return {
+                          ...current,
+                          durationSec,
+                          failureAt: Math.min(
+                            current.failureAt,
+                            Math.max(30, durationSec - 10),
+                          ),
+                        };
+                      })
                     }
                   />
                   <ParameterSlider
@@ -1595,7 +1683,7 @@ export default function SkygridApp() {
                       onClick={() => replanNow('rl')}
                       disabled={selectedDrone.status === 'failed'}
                     >
-                      <BrainCircuit /> AI 경로 재계산
+                      <BrainCircuit /> 경로 갱신
                     </Button>
                     {selectedDrone.status === 'failed' && (
                       <Button
@@ -2121,13 +2209,13 @@ export default function SkygridApp() {
                     <span>AI 학습</span>
                     <BrainCircuit size={14} />
                   </div>
-                  <p>모델을 재학습하거나 기본 모델을 복원할 수 있습니다.</p>
+                  <p>재학습 · 기본 모델 복원</p>
                   <Button
                     variant="outline"
                     className="mt-2 h-9 w-full"
                     onClick={() => setMode('training')}
                   >
-                    <BrainCircuit /> AI 학습 페이지 열기
+                    <BrainCircuit /> AI 학습으로 이동
                   </Button>
                 </div>
                 {mode === 'field' && (
@@ -2156,7 +2244,7 @@ export default function SkygridApp() {
                       ))}
                       {!selectedDrone?.route.length && (
                         <div className="empty-inline">
-                          경로 재계산을 실행하십시오.
+                          경로 없음 · 재계산 필요
                         </div>
                       )}
                     </div>
@@ -2241,17 +2329,14 @@ function TrainingWorkspace({
       <div className="workspace-page-header">
         <div>
           <div className="workspace-kicker">
-            <BrainCircuit /> MODEL WORKBENCH
+            <BrainCircuit /> 모델 관리
           </div>
           <h1>AI 학습</h1>
-          <p>
-            군집 전체의 배터리·거리·임무 중요도를 학습하고 새 경로 정책을
-            만듭니다.
-          </p>
+          <p>경로 정책 학습 · 1회 기준: 정찰지점 배정 완료까지</p>
         </div>
-        <Badge className="workspace-status">
+        <Badge className={`workspace-status ${busy ? 'is-training' : ''}`}>
           <span className="status-pulse" />
-          {busy ? '학습 중 ' + trainingProgress + '%' : '모델 사용 가능'}
+          {busy ? '학습 중 ' + trainingProgress + '%' : '모델 준비됨'}
         </Badge>
       </div>
 
@@ -2263,9 +2348,7 @@ function TrainingWorkspace({
               <h2>중앙집중형 다중 에이전트 DQN</h2>
             </div>
             <Badge variant="outline">
-              {policyBundle.origin === 'custom'
-                ? '사용자 재학습 모델'
-                : '기본 사전학습 모델'}
+              {policyBundle.origin === 'custom' ? '사용자 모델' : '기본 모델'}
             </Badge>
           </div>
           <div className="training-chart">
@@ -2321,7 +2404,7 @@ function TrainingWorkspace({
             </ResponsiveContainer>
           </div>
           <div className="workspace-chart-caption">
-            <span>에피소드별 최근 평균 보상</span>
+            <span>평균 보상 추이</span>
             <strong>{stats.episodes.toLocaleString()}회 학습 완료</strong>
           </div>
         </div>
@@ -2352,7 +2435,7 @@ function TrainingWorkspace({
             </div>
           </div>
           <div className="workspace-card">
-            <span className="workspace-label">학습 상태 입력</span>
+            <span className="workspace-label">모델 구성</span>
             <div className="training-feature-grid">
               <div>
                 <strong>13</strong>
@@ -2377,12 +2460,9 @@ function TrainingWorkspace({
 
       <div className="workspace-card training-controls-card">
         <div>
-          <span className="workspace-label">새 모델 만들기</span>
-          <h2>가상 임무를 반복해 정책을 다시 학습</h2>
-          <p>
-            학습이 끝나면 현재 임무의 경로를 새 모델 기준으로 다시 계산합니다.
-            결과는 이 브라우저에 저장됩니다.
-          </p>
+          <span className="workspace-label">재학습</span>
+          <h2>학습 횟수 선택</h2>
+          <p>완료 후 현재 경로에 적용 · 이 브라우저에 저장</p>
           <div className="training-progress-wrap">
             <div>
               <span>학습 진행률</span>
@@ -2413,7 +2493,7 @@ function TrainingWorkspace({
           >
             <Zap className={busy ? 'animate-pulse' : ''} />
             {busy
-              ? '새 모델 학습 중'
+              ? '학습 중'
               : trainingEpisodes.toLocaleString() + '회 학습 시작'}
           </Button>
           <Button
@@ -2454,13 +2534,10 @@ function EvaluationWorkspace({
       <div className="workspace-page-header">
         <div>
           <div className="workspace-kicker">
-            <FileChartColumn /> EVALUATION
+            <FileChartColumn /> 비교 평가
           </div>
           <h1>성능 비교</h1>
-          <p>
-            같은 임무 조건에서 최근접·중요도·다중 에이전트 DQN의 결과를
-            비교합니다.
-          </p>
+          <p>동일 조건에서 세 경로 방식을 비교</p>
         </div>
         <Badge variant="outline" className="workspace-status">
           임무 시각 {formatMissionTime(missionTime)}
@@ -2479,30 +2556,27 @@ function EvaluationWorkspace({
         />
         <div className="workspace-stack">
           <div className="workspace-card">
-            <span className="workspace-label">평가 기준</span>
+            <span className="workspace-label">비교 기준</span>
             <div className="evaluation-method-list">
               <div>
                 <strong>01</strong>
-                <span>같은 시나리오와 이탈 조건으로 실행</span>
+                <span>동일 시나리오·이탈 조건</span>
               </div>
               <div>
                 <strong>02</strong>
-                <span>정찰 연속성·완료율·공백을 기록</span>
+                <span>연속성·완료율·공백 기록</span>
               </div>
               <div>
                 <strong>03</strong>
-                <span>현재 임무는 실험 종료 후 동일 조건 비교</span>
+                <span>실험 종료 후 동일 조건 비교</span>
               </div>
             </div>
           </div>
           <div className="workspace-card evaluation-note">
             <ShieldCheck className="text-cyan-300" />
             <div>
-              <strong>비교 결과를 논문에 사용</strong>
-              <p>
-                세 방식의 조건, 반복 횟수, 측정 지표를 함께 기록해 AI 방식의
-                개선 효과를 확인할 수 있습니다.
-              </p>
+              <strong>논문용 비교</strong>
+              <p>조건·반복 횟수·측정 지표 기록</p>
             </div>
           </div>
         </div>
@@ -2801,8 +2875,8 @@ function ComparisonRail({
         ) : (
           <div className="empty-inline">
             {comparisonReady
-              ? '같은 조건으로 세 방식을 비교할 수 있습니다.'
-              : '실험을 시작하고 정지한 뒤 비교할 수 있습니다.'}
+              ? '동일 조건·세 방식 비교'
+              : '실험 종료 후 비교 가능'}
           </div>
         )}
         <Button

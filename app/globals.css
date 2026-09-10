@@ -216,7 +216,25 @@ button {
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  color: #a9dce8;
+  border-color: #29434d;
+  background: #0b181e;
+  color: #78939e;
+  box-shadow: none;
+}
+.workspace-status .status-pulse {
+  background: #54737d;
+  box-shadow: none;
+  animation: none;
+}
+.workspace-status.is-training {
+  border-color: #35606b;
+  background: #10262e;
+  color: #9acfd9;
+}
+.workspace-status.is-training .status-pulse {
+  background: #67e8f9;
+  box-shadow: 0 0 8px #67e8f9;
+  animation: status-pulse 2s ease-in-out infinite;
 }
 .workspace-grid,
 .evaluation-layout {
