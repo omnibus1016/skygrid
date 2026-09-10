@@ -296,6 +296,48 @@ export default function SkygridApp() {
     [config, policyBundle.policy],
   );
 
+  const applySimulationSettings = useCallback(() => {
+    const start = performance.now();
+    const failureDroneId =
+      mission.drones.find((drone) => drone.id === config.failureDroneId)?.id ??
+      mission.drones.find((drone) => drone.status === 'active')?.id ??
+      config.failureDroneId;
+    setConfig((currentConfig) => ({ ...currentConfig, failureDroneId }));
+    setMission((current) => {
+      const planned = assignRoutes(
+        current.drones,
+        current.waypoints,
+        current.time,
+        config.planner,
+        policyBundle.policy,
+      );
+      return {
+        ...current,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+        replanCount: current.replanCount + 1,
+        inferenceMs: Math.max(1, performance.now() - start),
+        events: [
+          {
+            id: `settings-${Date.now()}`,
+            time: current.time,
+            kind: 'system' as const,
+            title: '실험 설정 적용',
+            detail: `이탈 ${formatMissionTime(config.failureAt)} · ${config.simRate}배속 · ${PLANNER_LABEL[config.planner]}`,
+          },
+          ...current.events,
+        ].slice(0, 18),
+      };
+    });
+  }, [
+    config.failureAt,
+    config.failureDroneId,
+    config.planner,
+    config.simRate,
+    mission.drones,
+    policyBundle.policy,
+  ]);
+
   const replanNow = useCallback(
     (planner = config.planner) => {
       const start = performance.now();
@@ -1064,6 +1106,7 @@ export default function SkygridApp() {
                     size="icon"
                     onClick={() => applyScenario()}
                     aria-label="시뮬레이션 초기화"
+                    title="초기 시나리오로 기체와 정찰지점을 새로 생성"
                   >
                     <RefreshCw />
                   </Button>
@@ -1104,7 +1147,7 @@ export default function SkygridApp() {
                   <SlidersHorizontal size={14} />
                 </div>
                 <ParameterSlider
-                  label="가상 기체"
+                  label="초기 기체"
                   value={config.droneCount}
                   suffix="대"
                   min={0}
@@ -1119,7 +1162,7 @@ export default function SkygridApp() {
                   }
                 />
                 <ParameterSlider
-                  label="정찰지점"
+                  label="초기 정찰지점"
                   value={config.waypointCount}
                   suffix="개"
                   min={6}
@@ -1178,7 +1221,7 @@ export default function SkygridApp() {
                 <Button
                   variant="outline"
                   className="mt-3 h-9 w-full"
-                  onClick={() => applyScenario()}
+                  onClick={applySimulationSettings}
                 >
                   <CheckCircle2 /> 설정 적용
                 </Button>
@@ -1215,6 +1258,7 @@ export default function SkygridApp() {
                     className="icon-command"
                     onClick={() => applyScenario()}
                     aria-label="현장 임무 초기화"
+                    title="초기 시나리오로 기체와 정찰지점을 새로 생성"
                   >
                     <RefreshCw />
                   </Button>
