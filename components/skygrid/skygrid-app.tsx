@@ -131,7 +131,7 @@ const DEFAULT_CONFIG: ScenarioConfig = {
 };
 
 const PLANNER_LABEL: Record<PlannerKind, string> = {
-  rl: '강화학습 DQN',
+  rl: '다중 에이전트 DQN',
   nearest: '최근접 우선',
   priority: '중요도 우선',
 };
@@ -275,11 +275,19 @@ export default function SkygridApp() {
           mission.time,
           mission.waypoints.length,
           policyBundle.policy,
+          mission.drones,
+          mission.waypoints,
         ),
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 4);
-  }, [mission.waypoints, mission.time, selectedDrone, policyBundle.policy]);
+  }, [
+    mission.drones,
+    mission.waypoints,
+    mission.time,
+    selectedDrone,
+    policyBundle.policy,
+  ]);
 
   useEffect(() => {
     if (!mission.running) return;
@@ -1055,7 +1063,7 @@ export default function SkygridApp() {
           name: 'skygrid_trigger_dropout',
           title: '무인기 이탈 처리',
           description:
-            '지정한 무인기를 임무에서 이탈시키고 강화학습 정책으로 잔여 기체 임무를 재계획합니다.',
+            '지정한 무인기를 임무에서 이탈시키고 다중 에이전트 DQN으로 잔여 기체 임무를 재계획합니다.',
           inputSchema: {
             type: 'object',
             properties: { droneId: { type: 'string' } },
@@ -1259,7 +1267,7 @@ export default function SkygridApp() {
                     <SelectValue>{PLANNER_LABEL[config.planner]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="rl">강화학습 DQN</SelectItem>
+                    <SelectItem value="rl">다중 에이전트 DQN</SelectItem>
                     <SelectItem value="nearest">최근접 우선</SelectItem>
                     <SelectItem value="priority">중요도 우선</SelectItem>
                   </SelectContent>
@@ -1922,10 +1930,10 @@ export default function SkygridApp() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="font-mono text-sm text-slate-100">
-                        DQN-MC / CANDIDATE-Q
+                        중앙집중형 다중 에이전트 DQN
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        8 → 14 RELU → Q(s,a)
+                        13 입력 → 24 RELU → Q(s,a)
                       </div>
                     </div>
                     <Bot className="text-cyan-300" size={20} />

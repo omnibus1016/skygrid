@@ -453,7 +453,7 @@ export function runBatchEvaluation(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '강화학습' },
+    { kind: 'rl', label: '다중 에이전트 DQN' },
   ];
   return planners.map(({ kind, label }) => {
     const totals = {
@@ -521,7 +521,7 @@ export function runScenarioComparison(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '강화학습 DQN' },
+    { kind: 'rl', label: '다중 에이전트 DQN' },
   ];
   const validFailureDroneId =
     initialState.drones.find((drone) => drone.id === config.failureDroneId)

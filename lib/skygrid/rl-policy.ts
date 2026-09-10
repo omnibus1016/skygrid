@@ -2,8 +2,15 @@ import { haversineMeters } from './geo';
 import { mulberry32 } from './random';
 import type { Drone, PlannerKind, PolicyStats, Waypoint } from './types';
 
-const INPUTS = 8;
-const HIDDEN = 14;
+/*
+ * The policy is a centralized multi-agent DQN:
+ * one decision selects a (drone, waypoint) pair for the whole team.
+ * This keeps the model small enough to train in the browser while letting
+ * every candidate see the current state of the other available drones.
+ */
+const INPUTS = 13;
+const HIDDEN = 24;
+
 type Experience = {
   features: number[];
   reward: number;
@@ -11,8 +18,83 @@ type Experience = {
   done: boolean;
 };
 
+interface TrainingTask {
+  x: number;
+  y: number;
+  priority: number;
+  age: number;
+  deadline: number;
+}
+
+interface TrainingDrone {
+  x: number;
+  y: number;
+  battery: number;
+  reserveBattery: number;
+  consumptionPerKm: number;
+}
+
+interface Candidate {
+  droneIndex: number;
+  taskIndex: number;
+  features: number[];
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function distance2d(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function candidateFeatureVector({
+  distance,
+  priority,
+  urgency,
+  battery,
+  expectedBatteryUse,
+  reserveSpan,
+  remaining,
+  overdue,
+  teamSize,
+  averageBattery,
+  relativeAdvantage,
+  localDensity,
+}: {
+  distance: number;
+  priority: number;
+  urgency: number;
+  battery: number;
+  expectedBatteryUse: number;
+  reserveSpan: number;
+  remaining: number;
+  overdue: boolean;
+  teamSize: number;
+  averageBattery: number;
+  relativeAdvantage: number;
+  localDensity: number;
+}): number[] {
+  return [
+    1,
+    clamp(distance / 1.42, 0, 1),
+    clamp(priority / 5, 0, 1),
+    clamp(urgency, 0, 2) / 2,
+    clamp(battery, 0, 1),
+    clamp(expectedBatteryUse / Math.max(0.15, reserveSpan), 0, 1.5) / 1.5,
+    clamp(remaining / 30, 0, 1),
+    overdue ? 1 : 0,
+    clamp(teamSize / 6, 0, 1),
+    clamp(averageBattery, 0, 1),
+    clamp(relativeAdvantage, 0, 1),
+    clamp(localDensity / 4, 0, 1),
+    clamp(
+      (battery - expectedBatteryUse - (battery - reserveSpan)) /
+        Math.max(0.15, reserveSpan),
+      0,
+      1,
+    ),
+  ];
 }
 
 export class CandidateDqn {
@@ -23,10 +105,10 @@ export class CandidateDqn {
 
   constructor(random = mulberry32(41)) {
     this.w1 = Array.from({ length: HIDDEN }, () =>
-      Array.from({ length: INPUTS }, () => (random() - 0.5) * 0.34),
+      Array.from({ length: INPUTS }, () => (random() - 0.5) * 0.28),
     );
     this.b1 = Array(HIDDEN).fill(0);
-    this.w2 = Array.from({ length: HIDDEN }, () => (random() - 0.5) * 0.28);
+    this.w2 = Array.from({ length: HIDDEN }, () => (random() - 0.5) * 0.22);
     this.b2 = 0;
   }
 
@@ -67,7 +149,7 @@ export class CandidateDqn {
       (sum, value, index) => sum + value * this.w2[index],
       this.b2,
     );
-    const error = clamp(prediction - target, -12, 12);
+    const error = clamp(prediction - target, -10, 10);
     const previousW2 = [...this.w2];
 
     for (let h = 0; h < HIDDEN; h += 1)
@@ -85,39 +167,74 @@ export class CandidateDqn {
   }
 }
 
-interface TrainingTask {
-  x: number;
-  y: number;
-  priority: number;
-  age: number;
-  deadline: number;
-}
-
 function trainingFeatures(
   task: TrainingTask,
-  x: number,
-  y: number,
-  battery: number,
-  remaining: number,
+  taskIndex: number,
+  droneIndex: number,
+  team: TrainingDrone[],
+  tasks: TrainingTask[],
 ): number[] {
-  const distance = Math.hypot(task.x - x, task.y - y);
-  const urgency = clamp(task.age / task.deadline, 0, 2) / 2;
-  const energyCost =
-    clamp((distance * 0.32) / Math.max(0.15, battery), 0, 1.5) / 1.5;
-  return [
-    1,
-    clamp(distance / 1.42, 0, 1),
-    task.priority / 5,
+  const drone = team[droneIndex];
+  const distance = distance2d(drone, task);
+  const urgency = clamp(task.age / task.deadline, 0, 2);
+  const expectedBatteryUse = distance * drone.consumptionPerKm;
+  const reserveSpan = Math.max(0.2, drone.battery - drone.reserveBattery);
+  const peers = team.filter((_, index) => index !== droneIndex);
+  const nearestPeerDistance = peers.length
+    ? Math.min(...peers.map((peer) => distance2d(peer, task)))
+    : distance * 2;
+  const relativeAdvantage =
+    peers.length === 0
+      ? 1
+      : clamp(nearestPeerDistance / Math.max(0.03, distance), 0, 2) / 2;
+  const localDensity = tasks.filter(
+    (candidate, index) =>
+      index !== taskIndex && distance2d(candidate, task) < 0.28,
+  ).length;
+  const averageBattery =
+    team.reduce((sum, candidate) => sum + candidate.battery, 0) /
+    Math.max(1, team.length);
+
+  return candidateFeatureVector({
+    distance,
+    priority: task.priority,
     urgency,
-    battery,
-    energyCost,
-    clamp(remaining / 12, 0, 1),
-    task.age > task.deadline ? 1 : 0,
-  ];
+    battery: drone.battery,
+    expectedBatteryUse,
+    reserveSpan,
+    remaining: tasks.length,
+    overdue: task.age > task.deadline,
+    teamSize: team.length,
+    averageBattery,
+    relativeAdvantage,
+    localDensity,
+  });
+}
+
+function feasibleTrainingCandidates(
+  team: TrainingDrone[],
+  tasks: TrainingTask[],
+): Candidate[] {
+  const candidates: Candidate[] = [];
+  for (let droneIndex = 0; droneIndex < team.length; droneIndex += 1) {
+    const drone = team[droneIndex];
+    for (let taskIndex = 0; taskIndex < tasks.length; taskIndex += 1) {
+      const task = tasks[taskIndex];
+      const distance = distance2d(drone, task);
+      const use = distance * drone.consumptionPerKm;
+      if (drone.battery - use < drone.reserveBattery) continue;
+      candidates.push({
+        droneIndex,
+        taskIndex,
+        features: trainingFeatures(task, taskIndex, droneIndex, team, tasks),
+      });
+    }
+  }
+  return candidates;
 }
 
 export function trainDqnPolicy(
-  episodes = 650,
+  episodes = 700,
   seed = 2026,
 ): { policy: CandidateDqn; stats: PolicyStats } {
   const random = mulberry32(seed);
@@ -127,68 +244,103 @@ export function trainDqnPolicy(
   const rewardHistory: { episode: number; reward: number }[] = [];
   const recentRewards: number[] = [];
   let finalLoss = 0;
-  let epsilon = 0.9;
+  let epsilon = 0.95;
 
   for (let episode = 1; episode <= episodes; episode += 1) {
-    const taskCount = 6 + Math.floor(random() * 7);
-    const tasks: TrainingTask[] = Array.from({ length: taskCount }, () => ({
-      x: random(),
-      y: random(),
-      priority: 1 + Math.floor(random() * 5),
-      age: random() * 160,
-      deadline: 70 + random() * 150,
-    }));
-    let x = random();
-    let y = random();
-    let battery = 0.55 + random() * 0.45;
+    const team: TrainingDrone[] = Array.from(
+      { length: 2 + Math.floor(random() * 5) },
+      () => ({
+        x: random(),
+        y: random(),
+        battery: 0.68 + random() * 0.32,
+        reserveBattery: 0.16,
+        consumptionPerKm: 0.27 + random() * 0.1,
+      }),
+    );
+    const tasks: TrainingTask[] = Array.from(
+      { length: 10 + Math.floor(random() * 15) },
+      () => ({
+        x: random(),
+        y: random(),
+        priority: 1 + Math.floor(random() * 5),
+        age: random() * 180,
+        deadline: 70 + random() * 170,
+      }),
+    );
     let episodeReward = 0;
 
-    while (tasks.length && battery > 0.14) {
-      const candidates = tasks.map((task) =>
-        trainingFeatures(task, x, y, battery, tasks.length),
-      );
+    while (tasks.length) {
+      const candidates = feasibleTrainingCandidates(team, tasks);
+      if (!candidates.length) {
+        episodeReward -= tasks.length * 0.9;
+        break;
+      }
       let action = 0;
-      if (random() < epsilon) action = Math.floor(random() * candidates.length);
-      else
+      if (random() < epsilon) {
+        action = Math.floor(random() * candidates.length);
+      } else {
         action = candidates.reduce(
-          (best, features, index) =>
-            policy.predict(features) > policy.predict(candidates[best])
+          (best, candidate, index) =>
+            policy.predict(candidate.features) >
+            policy.predict(candidates[best].features)
               ? index
               : best,
           0,
         );
+      }
 
-      const selected = tasks[action];
-      const distance = Math.hypot(selected.x - x, selected.y - y);
-      const transitSeconds = distance * 145;
-      const urgency = clamp(selected.age / selected.deadline, 0, 2);
-      const reserveViolation = battery - distance * 0.32 < 0.16;
-      const reward =
-        selected.priority * 1.65 +
-        urgency * 2.8 -
-        distance * 5.4 -
-        (reserveViolation ? 8 : 0);
-
-      x = selected.x;
-      y = selected.y;
-      battery = clamp(battery - distance * 0.32 - 0.008, 0, 1);
-      tasks.splice(action, 1);
-      tasks.forEach((task) => {
-        task.age += transitSeconds;
-      });
-      const next = tasks.map((task) =>
-        trainingFeatures(task, x, y, battery, tasks.length),
+      const selected = candidates[action];
+      const drone = team[selected.droneIndex];
+      const task = tasks[selected.taskIndex];
+      const distance = distance2d(drone, task);
+      const energyUse = distance * drone.consumptionPerKm;
+      const urgency = clamp(task.age / task.deadline, 0, 2);
+      const peers = team.filter((_, index) => index !== selected.droneIndex);
+      const nearestPeerDistance = peers.length
+        ? Math.min(...peers.map((peer) => distance2d(peer, task)))
+        : distance * 2;
+      const relativeAdvantage =
+        peers.length === 0
+          ? 1
+          : clamp(nearestPeerDistance / Math.max(0.03, distance), 0, 2) / 2;
+      const reserveMargin = clamp(
+        (drone.battery - energyUse - drone.reserveBattery) /
+          Math.max(0.15, drone.battery - drone.reserveBattery),
+        0,
+        1,
       );
-      replay.push({
-        features: candidates[action],
-        reward,
-        next,
-        done: tasks.length === 0 || battery <= 0.14,
-      });
-      if (replay.length > 2_400) replay.shift();
-      episodeReward += reward;
+      const reward =
+        task.priority * 1.55 +
+        urgency * 3.2 +
+        relativeAdvantage * 1.4 +
+        reserveMargin * 0.7 -
+        distance * 4.2 -
+        energyUse * 2.4;
 
-      const sampleCount = Math.min(10, replay.length);
+      drone.x = task.x;
+      drone.y = task.y;
+      drone.battery = clamp(drone.battery - energyUse - 0.008, 0, 1);
+      tasks.splice(selected.taskIndex, 1);
+      const transitSeconds = distance * 145;
+      tasks.forEach((remainingTask) => {
+        remainingTask.age += transitSeconds;
+      });
+
+      const nextCandidates = feasibleTrainingCandidates(team, tasks);
+      const done = tasks.length === 0 || nextCandidates.length === 0;
+      const missedTaskPenalty =
+        !nextCandidates.length && tasks.length ? tasks.length * 0.9 : 0;
+      const transitionReward = reward - missedTaskPenalty;
+      replay.push({
+        features: selected.features,
+        reward: transitionReward,
+        next: nextCandidates.map((candidate) => candidate.features),
+        done,
+      });
+      if (replay.length > 8_000) replay.shift();
+      episodeReward += transitionReward;
+
+      const sampleCount = Math.min(24, replay.length);
       let batchLoss = 0;
       for (let sample = 0; sample < sampleCount; sample += 1) {
         const experience = replay[Math.floor(random() * replay.length)];
@@ -202,8 +354,8 @@ export function trainDqnPolicy(
               );
         batchLoss += policy.train(
           experience.features,
-          experience.reward + 0.92 * nextValue,
-          0.0018,
+          experience.reward + 0.94 * nextValue,
+          0.0014,
         );
       }
       finalLoss = batchLoss / Math.max(1, sampleCount);
@@ -211,8 +363,8 @@ export function trainDqnPolicy(
 
     recentRewards.push(episodeReward);
     if (recentRewards.length > 50) recentRewards.shift();
-    epsilon = Math.max(0.04, epsilon * 0.9935);
-    if (episode % 40 === 0) targetPolicy = policy.clone();
+    epsilon = Math.max(0.05, epsilon * 0.994);
+    if (episode % 50 === 0) targetPolicy = policy.clone();
     if (episode === 1 || episode % 25 === 0 || episode === episodes) {
       rewardHistory.push({
         episode,
@@ -242,25 +394,53 @@ export function missionFeatures(
   waypoint: Waypoint,
   missionTime: number,
   remaining: number,
+  team: Drone[] = [],
+  pending: Waypoint[] = [],
 ): number[] {
+  const fleet = [
+    drone,
+    ...team.filter(
+      (candidate) =>
+        candidate.id !== drone.id &&
+        (candidate.status === 'active' || candidate.status === 'ready'),
+    ),
+  ];
   const distanceM = haversineMeters(drone, waypoint);
   const age = Math.max(0, missionTime - waypoint.lastVisited);
-  const urgency = clamp(age / waypoint.revisitSec, 0, 2) / 2;
+  const urgency = clamp(age / waypoint.revisitSec, 0, 2);
   const expectedBatteryUse = (distanceM / 1000) * drone.consumptionPerKm;
-  return [
-    1,
-    clamp(distanceM / 2_000, 0, 1),
-    waypoint.priority / 5,
+  const reserveSpan = Math.max(5, drone.battery - drone.reserveBattery);
+  const peers = fleet.slice(1);
+  const nearestPeerDistance = peers.length
+    ? Math.min(...peers.map((peer) => haversineMeters(peer, waypoint)))
+    : distanceM * 2;
+  const relativeAdvantage =
+    peers.length === 0
+      ? 1
+      : clamp(nearestPeerDistance / Math.max(25, distanceM), 0, 2) / 2;
+  const localDensity = pending.filter(
+    (candidate) =>
+      candidate.id !== waypoint.id &&
+      haversineMeters(candidate, waypoint) < 500,
+  ).length;
+  const averageBattery =
+    fleet.reduce((sum, candidate) => sum + candidate.battery / 100, 0) /
+    Math.max(1, fleet.length);
+
+  return candidateFeatureVector({
+    distance: distanceM / 1_000,
+    priority: waypoint.priority,
     urgency,
-    drone.battery / 100,
-    clamp(
-      expectedBatteryUse / Math.max(5, drone.battery - drone.reserveBattery),
-      0,
-      1.5,
-    ) / 1.5,
-    clamp(remaining / 30, 0, 1),
-    age > waypoint.revisitSec ? 1 : 0,
-  ];
+    battery: drone.battery / 100,
+    expectedBatteryUse: expectedBatteryUse / 100,
+    reserveSpan: reserveSpan / 100,
+    remaining,
+    overdue: age > waypoint.revisitSec,
+    teamSize: fleet.length,
+    averageBattery,
+    relativeAdvantage,
+    localDensity,
+  });
 }
 
 export function plannerScore(
@@ -270,6 +450,8 @@ export function plannerScore(
   missionTime: number,
   remaining: number,
   policy: CandidateDqn,
+  team: Drone[] = [],
+  pending: Waypoint[] = [],
 ): number {
   const distanceM = haversineMeters(drone, waypoint);
   const age = Math.max(0, missionTime - waypoint.lastVisited);
@@ -277,7 +459,7 @@ export function plannerScore(
   if (kind === 'priority')
     return waypoint.priority * 1_000 + age * 2 - distanceM * 0.35;
   return policy.predict(
-    missionFeatures(drone, waypoint, missionTime, remaining),
+    missionFeatures(drone, waypoint, missionTime, remaining, team, pending),
   );
 }
 
@@ -318,6 +500,8 @@ export function assignRoutes(
           missionTime,
           pending.length,
           policy,
+          virtual,
+          pending,
         );
         if (!best || score > best.score)
           best = { droneIndex, targetIndex, score };
