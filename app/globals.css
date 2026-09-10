@@ -258,11 +258,57 @@ button {
     0 18px 42px #00000022;
   padding: 20px;
 }
-.compact-nav-card p {
-  margin: -2px 0 0;
+.current-model-card .section-heading {
+  margin-bottom: 10px;
+}
+.model-status {
+  padding: 4px 7px;
+  border: 1px solid #30434a;
+  border-radius: 999px;
+  color: #7f959e;
+  background: #0b171c;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.model-status.active {
+  border-color: #24788a;
+  color: #7ee7f4;
+  background: #0a2229;
+}
+.current-model-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.current-model-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #214a56;
+  border-radius: 6px;
+  color: #70deef;
+  background: #0b2027;
+}
+.current-model-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.current-model-summary strong {
+  color: #d9e9ed;
+  font-size: 13px;
+  font-weight: 600;
+}
+.current-model-summary div > span {
   color: #718b96;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+}
+.current-model-data {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #172d35;
 }
 .workspace-card-header {
   display: flex;

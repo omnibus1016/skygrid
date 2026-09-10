@@ -2377,19 +2377,38 @@ export default function SkygridApp() {
                   </div>
                 </div>
 
-                <div className="rail-section compact-nav-card">
+                <div className="rail-section current-model-card">
                   <div className="section-heading">
-                    <span>AI 학습</span>
-                    <BrainCircuit size={14} />
+                    <span>현재 학습 모델</span>
+                    <span
+                      className={`model-status ${config.planner === 'rl' ? 'active' : ''}`}
+                    >
+                      {config.planner === 'rl' ? '적용 중' : '대기'}
+                    </span>
                   </div>
-                  <p>재학습 · 기본 모델 복원</p>
-                  <Button
-                    variant="outline"
-                    className="mt-2 h-9 w-full"
-                    onClick={() => setMode('training')}
-                  >
-                    <BrainCircuit /> AI 학습으로 이동
-                  </Button>
+                  <div className="current-model-summary">
+                    <span className="current-model-icon">
+                      <BrainCircuit size={19} />
+                    </span>
+                    <div>
+                      <strong>다중 에이전트 DQN</strong>
+                      <span>
+                        {policyBundle.origin === 'pretrained'
+                          ? '기본 사전학습 모델'
+                          : '사용자 재학습 모델'}
+                      </span>
+                    </div>
+                  </div>
+                  <dl className="data-list current-model-data">
+                    <div>
+                      <dt>학습 시나리오</dt>
+                      <dd>{policyStats.episodes.toLocaleString()}회</dd>
+                    </div>
+                    <div>
+                      <dt>현재 경로 계산</dt>
+                      <dd>{PLANNER_LABEL[config.planner]}</dd>
+                    </div>
+                  </dl>
                 </div>
                 {mode === 'field' && (
                   <div className="rail-section flex-1">
