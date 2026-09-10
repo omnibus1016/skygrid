@@ -1249,6 +1249,7 @@ button {
 }
 .tactical-map.interaction-add-waypoint,
 .tactical-map.interaction-add-drone,
+.tactical-map.interaction-add-base,
 .tactical-map.interaction-move-drone {
   cursor: crosshair;
 }

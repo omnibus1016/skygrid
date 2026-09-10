@@ -126,8 +126,8 @@ const OperationalMap = dynamic(() => import('./operational-map'), {
 });
 
 const DEFAULT_CONFIG: ScenarioConfig = {
-  droneCount: 4,
-  waypointCount: 20,
+  droneCount: 0,
+  waypointCount: 0,
   durationSec: 600,
   failureAt: 90,
   failureDroneId: 'UAV-02',
@@ -135,6 +135,12 @@ const DEFAULT_CONFIG: ScenarioConfig = {
   simRate: 4,
   sensorRadiusM: 110,
   randomSeed: 20261125,
+};
+
+const EVALUATION_CONFIG: ScenarioConfig = {
+  ...DEFAULT_CONFIG,
+  droneCount: 4,
+  waypointCount: 20,
 };
 
 const PLANNER_LABEL: Record<PlannerKind, string> = {
@@ -280,13 +286,13 @@ export default function SkygridApp() {
     'drone' | 'waypoint'
   >('waypoint');
   const [interaction, setInteraction] = useState<
-    'inspect' | 'add-waypoint' | 'add-drone' | 'move-drone'
+    'inspect' | 'add-base' | 'add-waypoint' | 'add-drone' | 'move-drone'
   >('inspect');
   const [logs, setLogs] = useState<FlightLog[]>(() => createDemoLogs(mission));
   const [selectedLogId, setSelectedLogId] = useState('DEMO-UAV-01');
   const [uploadError, setUploadError] = useState('');
   const [batchResults, setBatchResults] = useState(() =>
-    runBatchEvaluation(DEFAULT_CONFIG, policyBundle.policy, 48),
+    runBatchEvaluation(EVALUATION_CONFIG, policyBundle.policy, 48),
   );
   const [comparisonBaseline, setComparisonBaseline] =
     useState<MissionState | null>(null);
@@ -315,7 +321,7 @@ export default function SkygridApp() {
     const timer = window.setTimeout(() => {
       setPolicyBundle(saved);
       setMission(createMission(DEFAULT_CONFIG, saved.policy));
-      setBatchResults(runBatchEvaluation(DEFAULT_CONFIG, saved.policy, 48));
+      setBatchResults(runBatchEvaluation(EVALUATION_CONFIG, saved.policy, 48));
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -336,7 +342,14 @@ export default function SkygridApp() {
       ? Boolean(selectedDrone)
       : Boolean(selectedWaypoint);
   const missionReady =
-    mission.drones.length > 0 && mission.waypoints.length > 0;
+    mission.base.configured &&
+    mission.drones.length > 0 &&
+    mission.waypoints.length > 0;
+  const missingMissionInputs = [
+    !mission.base.configured ? '기지' : '',
+    !mission.drones.length ? '기체' : '',
+    !mission.waypoints.length ? '정찰지점' : '',
+  ].filter(Boolean);
   const activeDropoutDroneId = mission.drones.some(
     (drone) => drone.id === dropoutDroneId && drone.status !== 'failed',
   )
@@ -420,6 +433,11 @@ export default function SkygridApp() {
     },
     [config, policyBundle.policy],
   );
+
+  const clearScenario = useCallback(() => {
+    setConfig(DEFAULT_CONFIG);
+    applyScenario(DEFAULT_CONFIG);
+  }, [applyScenario]);
 
   const replaySimulation = useCallback(() => {
     if (!missionReady) return;
@@ -643,6 +661,13 @@ export default function SkygridApp() {
       const waypointId = `RP-${String(nextNumber).padStart(2, '0')}`;
       setSelectedWaypointId(waypointId);
       setSelectedMapEntity('waypoint');
+      setConfig((current) => ({
+        ...current,
+        waypointCount: Math.max(
+          current.waypointCount,
+          mission.waypoints.length + 1,
+        ),
+      }));
       setMission((current) => {
         const waypoint: Waypoint = {
           id: waypointId,
@@ -760,12 +785,65 @@ export default function SkygridApp() {
     [mission.drones, mission.base, config.planner, policyBundle.policy],
   );
 
+  const setBaseAt = useCallback(
+    (point: GeoPoint) => {
+      setMission((current) => {
+        const base = { ...current.base, ...point, configured: true };
+        const drones = current.drones.map((drone, index) => {
+          const stagedAtBase =
+            drone.status === 'ready' && drone.phase === 'base';
+          const offset = (index - (current.drones.length - 1) / 2) * 0.00007;
+          return {
+            ...drone,
+            homeLat: point.lat,
+            homeLng: point.lng,
+            ...(stagedAtBase
+              ? {
+                  lat: point.lat + offset,
+                  lng: point.lng + offset * 0.7,
+                }
+              : {}),
+          };
+        });
+        const planned = assignRoutes(
+          drones,
+          current.waypoints,
+          current.time,
+          config.planner,
+          policyBundle.policy,
+        );
+        return {
+          ...current,
+          base,
+          drones: planned.drones,
+          waypoints: planned.waypoints,
+          replanCount: current.replanCount + 1,
+          events: [
+            {
+              id: `base-${Date.now()}`,
+              time: current.time,
+              kind: 'system' as const,
+              title: `${base.id} 위치 지정`,
+              detail: `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`,
+            },
+            ...current.events,
+          ].slice(0, 18),
+        };
+      });
+      setInteraction('inspect');
+      setMapContextMenu(null);
+    },
+    [config.planner, policyBundle.policy],
+  );
+
   const handleMapClick = useCallback(
     (point: GeoPoint) => {
       if (interaction === 'add-waypoint') {
         addWaypointAt(point);
       } else if (interaction === 'add-drone') {
         addDroneAt(point);
+      } else if (interaction === 'add-base') {
+        setBaseAt(point);
       } else if (interaction === 'move-drone' && selectedDroneId) {
         setMission((current) => {
           const drones = current.drones.map((drone) =>
@@ -822,6 +900,7 @@ export default function SkygridApp() {
       selectedDroneId,
       addWaypointAt,
       addDroneAt,
+      setBaseAt,
       config.planner,
       policyBundle.policy,
     ],
@@ -835,6 +914,10 @@ export default function SkygridApp() {
           '',
       );
       setSelectedMapEntity('waypoint');
+      setConfig((current) => ({
+        ...current,
+        waypointCount: Math.max(0, mission.waypoints.length - 1),
+      }));
       setMission((current) => {
         const waypoints = current.waypoints.filter(
           (waypoint) => waypoint.id !== waypointId,
@@ -1190,7 +1273,15 @@ export default function SkygridApp() {
   const runBatch = useCallback(() => {
     setBusyAction('batch');
     window.setTimeout(() => {
-      setBatchResults(runBatchEvaluation(config, policyBundle.policy, 100));
+      setBatchResults(
+        runBatchEvaluation(
+          config.droneCount && config.waypointCount
+            ? config
+            : EVALUATION_CONFIG,
+          policyBundle.policy,
+          100,
+        ),
+      );
       setBusyAction(null);
     }, 40);
   }, [config, policyBundle.policy]);
@@ -1267,8 +1358,8 @@ export default function SkygridApp() {
           inputSchema: {
             type: 'object',
             properties: {
-              droneCount: { type: 'number', minimum: 2, maximum: 10 },
-              waypointCount: { type: 'number', minimum: 6, maximum: 30 },
+              droneCount: { type: 'number', minimum: 0, maximum: 10 },
+              waypointCount: { type: 'number', minimum: 0, maximum: 30 },
               durationSec: { type: 'number', minimum: 60, maximum: 7200 },
               failureAt: { type: 'number', minimum: 30, maximum: 7140 },
             },
@@ -1468,9 +1559,9 @@ export default function SkygridApp() {
                       variant="outline"
                       className="icon-command"
                       size="icon"
-                      onClick={() => applyScenario()}
-                      aria-label="시뮬레이션 초기화"
-                      title="초기 시나리오로 기체와 정찰지점을 새로 생성"
+                      onClick={clearScenario}
+                      aria-label="작전지도 비우기"
+                      title="기지·기체·정찰지점을 모두 지움"
                     >
                       <RefreshCw />
                     </Button>
@@ -1487,11 +1578,7 @@ export default function SkygridApp() {
                   </Button>
                   {!missionReady && (
                     <output className="empty-inline">
-                      {!mission.drones.length && !mission.waypoints.length
-                        ? '기체·정찰지점 필요'
-                        : !mission.drones.length
-                          ? '기체 필요'
-                          : '정찰지점 필요'}
+                      {missingMissionInputs.join('·')} 필요
                     </output>
                   )}
                 </div>
@@ -1529,7 +1616,7 @@ export default function SkygridApp() {
                     label="초기 정찰지점"
                     value={config.waypointCount}
                     suffix="개"
-                    min={6}
+                    min={0}
                     max={30}
                     step={1}
                     onChange={(value) =>
@@ -1827,25 +1914,30 @@ export default function SkygridApp() {
             <div className="map-toolbar">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="map-badge">
-                  <MapIcon /> 청주 시험구역 / WGS84
+                  <MapIcon /> 한반도 작전지도 / WGS84
                 </Badge>
-                {mode !== 'analysis' && (
-                  <Badge
-                    variant="outline"
-                    className={
-                      mission.failureTriggered
-                        ? 'event-badge danger'
-                        : 'event-badge'
-                    }
-                  >
-                    <CircleDot />{' '}
-                    {mission.failureTriggered
-                      ? '기체 이탈 · 재계획 완료'
-                      : mode === 'field'
-                        ? '운용자 상태 입력 대기'
-                        : `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`}
-                  </Badge>
-                )}
+                {mode !== 'analysis' &&
+                  (mission.base.configured ||
+                    mission.drones.length > 0 ||
+                    mission.waypoints.length > 0) && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        mission.failureTriggered
+                          ? 'event-badge danger'
+                          : 'event-badge'
+                      }
+                    >
+                      <CircleDot />{' '}
+                      {mission.failureTriggered
+                        ? '기체 이탈 · 재계획 완료'
+                        : mode === 'field'
+                          ? '운용자 상태 입력 대기'
+                          : missionReady
+                            ? `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`
+                            : '작전구역 편집 중'}
+                    </Badge>
+                  )}
                 {mode === 'analysis' && (
                   <Badge variant="outline" className="event-badge">
                     <Database /> 비행기록 {logs.length}개 중첩
@@ -1882,6 +1974,17 @@ export default function SkygridApp() {
 
             {mode !== 'analysis' && (
               <div className="map-edit-toolbar">
+                <button
+                  type="button"
+                  className={`map-tool ${interaction === 'add-base' ? 'active' : ''}`}
+                  onClick={() =>
+                    setInteraction(
+                      interaction === 'add-base' ? 'inspect' : 'add-base',
+                    )
+                  }
+                >
+                  <Crosshair /> 기지 지정
+                </button>
                 <button
                   type="button"
                   className="map-tool"
@@ -1947,7 +2050,9 @@ export default function SkygridApp() {
                       ? `${selectedDroneId}를 이동할 위치를 클릭하세요`
                       : interaction === 'add-drone'
                         ? '기체를 배치할 위치를 클릭하세요'
-                        : '정찰지점을 등록할 위치를 클릭하세요'}
+                        : interaction === 'add-base'
+                          ? '기지를 배치할 위치를 클릭하세요'
+                          : '정찰지점을 등록할 위치를 클릭하세요'}
                   </span>
                 )}
               </div>
@@ -1988,6 +2093,12 @@ export default function SkygridApp() {
                 }
               >
                 <div className="map-context-title">이 위치에 추가</div>
+                <button
+                  type="button"
+                  onClick={() => setBaseAt(mapContextMenu.point)}
+                >
+                  <Crosshair /> 기지 지정
+                </button>
                 <button
                   type="button"
                   onClick={() => addWaypointAt(mapContextMenu.point)}

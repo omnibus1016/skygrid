@@ -17,12 +17,13 @@ import type {
   Waypoint,
 } from './types';
 
-const CENTER = { lat: 36.6219, lng: 127.5032 };
+const CENTER = { lat: 36.35, lng: 127.85 };
 const BASE = {
   id: 'BASE-01',
   name: '무인기 전개기지',
-  lat: CENTER.lat - 0.0094,
-  lng: CENTER.lng - 0.0118,
+  lat: CENTER.lat,
+  lng: CENTER.lng,
+  configured: false,
 };
 const COLORS = [
   '#67e8f9',
@@ -186,18 +187,7 @@ export function createMission(
       };
     },
   );
-  const noFlyZones = [
-    {
-      id: 'NFZ-01',
-      name: '비행 제한구역',
-      points: [
-        { lat: CENTER.lat + 0.0004, lng: CENTER.lng - 0.0022 },
-        { lat: CENTER.lat + 0.0031, lng: CENTER.lng - 0.0004 },
-        { lat: CENTER.lat + 0.0015, lng: CENTER.lng + 0.0018 },
-        { lat: CENTER.lat - 0.0012, lng: CENTER.lng + 0.0002 },
-      ],
-    },
-  ];
+  const noFlyZones: MissionState['noFlyZones'] = [];
   const planned = assignRoutes(drones, waypoints, 0, config.planner, policy);
   return {
     time: 0,
@@ -208,14 +198,17 @@ export function createMission(
     waypoints: planned.waypoints,
     base: { ...BASE },
     noFlyZones,
-    events: [
-      makeEvent(
-        0,
-        'system',
-        '가상 임무 준비',
-        `${config.droneCount}대 기지 대기 · 정찰지점 ${config.waypointCount}개`,
-      ),
-    ],
+    events:
+      config.droneCount || config.waypointCount
+        ? [
+            makeEvent(
+              0,
+              'system',
+              '가상 임무 준비',
+              `${config.droneCount}대 · 정찰지점 ${config.waypointCount}개`,
+            ),
+          ]
+        : [],
     weightedGapSeconds: 0,
     continuityIntegral: 0,
     continuityObservationSeconds: 0,

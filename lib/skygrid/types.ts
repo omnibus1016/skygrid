@@ -16,6 +16,7 @@ export interface GeoPoint {
 export interface MissionBase extends GeoPoint {
   id: string;
   name: string;
+  configured: boolean;
 }
 
 export interface Waypoint extends GeoPoint {

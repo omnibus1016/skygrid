@@ -30,7 +30,12 @@ interface OperationalMapProps {
   logs: FlightLog[];
   selectedDroneId: string;
   selectedWaypointId: string;
-  interaction: 'inspect' | 'add-waypoint' | 'add-drone' | 'move-drone';
+  interaction:
+    | 'inspect'
+    | 'add-base'
+    | 'add-waypoint'
+    | 'add-drone'
+    | 'move-drone';
   onMapClick: (point: GeoPoint) => void;
   onMapContextMenu: (
     point: GeoPoint,
@@ -155,6 +160,11 @@ export default function OperationalMap({
     [mission.drones, mission.waypoints, mission.base, mission.noFlyZones],
   );
 
+  const operationalPoints = [
+    ...(mission.base.configured ? [mission.base] : []),
+    ...mission.waypoints,
+    ...mission.drones,
+  ];
   const mapPoints =
     mode === 'analysis' && logs.length
       ? logs.flatMap((log) =>
@@ -163,10 +173,7 @@ export default function OperationalMap({
               index % Math.max(1, Math.floor(log.points.length / 200)) === 0,
           ),
         )
-      : [
-          mission.base,
-          ...(mission.waypoints.length ? mission.waypoints : mission.drones),
-        ];
+      : operationalPoints;
   const viewportBounds: ViewportBounds | null = mapPoints.length
     ? {
         minLat: Math.min(...mapPoints.map((point) => point.lat)),
@@ -181,8 +188,8 @@ export default function OperationalMap({
 
   return (
     <MapContainer
-      center={[36.6219, 127.5032]}
-      zoom={15}
+      center={[36.25, 127.8]}
+      zoom={7}
       zoomControl
       attributionControl
       className={`tactical-map map-base-${mapBase} interaction-${interaction}`}
@@ -246,7 +253,7 @@ export default function OperationalMap({
           />
         ))}
 
-      {mode !== 'analysis' && (
+      {mode !== 'analysis' && mission.base.configured && (
         <Marker
           position={[mission.base.lat, mission.base.lng]}
           icon={baseIcon()}
