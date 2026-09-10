@@ -62,6 +62,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -76,6 +77,12 @@ import {
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatMissionTime } from '@/lib/skygrid/geo';
+import {
+  DEFAULT_DRONE_PROFILE_ID,
+  DRONE_PROFILES,
+  getDroneProfile,
+  profileSimulationValues,
+} from '@/lib/skygrid/drone-profiles';
 import {
   calculateLogMetrics,
   createDemoLogs,
@@ -106,6 +113,7 @@ import {
 import type {
   AppMode,
   Drone,
+  DroneProfileId,
   FlightLog,
   GeoPoint,
   MissionState,
@@ -313,6 +321,11 @@ export default function SkygridApp() {
     null,
   );
   const [droneStatusOpen, setDroneStatusOpen] = useState(false);
+  const [pendingDronePoint, setPendingDronePoint] = useState<GeoPoint | null>(
+    null,
+  );
+  const [pendingDroneProfileId, setPendingDroneProfileId] =
+    useState<DroneProfileId>(DEFAULT_DRONE_PROFILE_ID);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -710,7 +723,7 @@ export default function SkygridApp() {
   );
 
   const addDroneAt = useCallback(
-    (point: GeoPoint) => {
+    (point: GeoPoint, profileId: DroneProfileId) => {
       const nextNumber =
         Math.max(
           0,
@@ -719,28 +732,22 @@ export default function SkygridApp() {
           ),
         ) + 1;
       const droneId = `UAV-${String(nextNumber).padStart(2, '0')}`;
+      const profile = getDroneProfile(profileId);
+      const performance = profileSimulationValues(profile);
       const newDrone: Drone = {
         id: droneId,
-        model: 'SIM SCOUT-S',
+        ...performance,
         color: ['#67e8f9', '#fbbf62', '#a78bfa', '#64d39b', '#f472b6'][
           nextNumber % 5
         ],
         ...point,
         homeLat: mission.base.lat,
         homeLng: mission.base.lng,
-        speedMps: 11,
-        turnRateDps: 140,
-        battery: 82,
-        reserveBattery: 22,
-        consumptionPerKm: 10.4,
-        loiterConsumptionPerMin: 1.15,
-        maxBattery: 90,
-        turnaroundSec: 40,
         turnaroundRemainingSec: 0,
         dwellRemainingSec: 0,
         phase: 'transit',
         sortieCount: 1,
-        minimumBattery: 82,
+        minimumBattery: performance.maxBattery,
         status: 'active',
         route: [],
         routeIndex: 0,
@@ -773,7 +780,7 @@ export default function SkygridApp() {
               time: current.time,
               kind: 'replan' as const,
               title: `${droneId} 기체 추가`,
-              detail: '기체 추가 · 경로 갱신',
+              detail: `${profile.model} · 경로 갱신`,
             },
             ...current.events,
           ].slice(0, 18),
@@ -781,9 +788,16 @@ export default function SkygridApp() {
       });
       setInteraction('inspect');
       setMapContextMenu(null);
+      setPendingDronePoint(null);
     },
     [mission.drones, mission.base, config.planner, policyBundle.policy],
   );
+
+  const requestDronePlacement = useCallback((point: GeoPoint) => {
+    setPendingDroneProfileId(DEFAULT_DRONE_PROFILE_ID);
+    setPendingDronePoint(point);
+    setMapContextMenu(null);
+  }, []);
 
   const setBaseAt = useCallback(
     (point: GeoPoint) => {
@@ -841,7 +855,7 @@ export default function SkygridApp() {
       if (interaction === 'add-waypoint') {
         addWaypointAt(point);
       } else if (interaction === 'add-drone') {
-        addDroneAt(point);
+        requestDronePlacement(point);
       } else if (interaction === 'add-base') {
         setBaseAt(point);
       } else if (interaction === 'move-drone' && selectedDroneId) {
@@ -899,7 +913,7 @@ export default function SkygridApp() {
       interaction,
       selectedDroneId,
       addWaypointAt,
-      addDroneAt,
+      requestDronePlacement,
       setBaseAt,
       config.planner,
       policyBundle.policy,
@@ -2107,7 +2121,7 @@ export default function SkygridApp() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => addDroneAt(mapContextMenu.point)}
+                  onClick={() => requestDronePlacement(mapContextMenu.point)}
                 >
                   <Satellite /> 드론 추가
                 </button>
@@ -2169,6 +2183,108 @@ export default function SkygridApp() {
               </div>
             )}
 
+            <Dialog
+              open={Boolean(pendingDronePoint)}
+              onOpenChange={(open) => {
+                if (open) return;
+                setPendingDronePoint(null);
+                setInteraction('inspect');
+              }}
+            >
+              <DialogContent className="drone-profile-dialog">
+                <DialogHeader>
+                  <DialogTitle>투입 기체 선택</DialogTitle>
+                  <DialogDescription>
+                    DJI 공식 무풍 시험값 기준
+                  </DialogDescription>
+                </DialogHeader>
+                <div
+                  className="drone-profile-grid"
+                  role="radiogroup"
+                  aria-label="드론 기종"
+                >
+                  {DRONE_PROFILES.map((profile) => {
+                    const selected = profile.id === pendingDroneProfileId;
+                    return (
+                      <label
+                        key={profile.id}
+                        className={`drone-profile-option ${selected ? 'active' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="drone-profile"
+                          value={profile.id}
+                          checked={selected}
+                          onChange={() => setPendingDroneProfileId(profile.id)}
+                        />
+                        <span className="drone-profile-title">
+                          <strong>{profile.model}</strong>
+                          {profile.id === DEFAULT_DRONE_PROFILE_ID && (
+                            <i>기본</i>
+                          )}
+                        </span>
+                        <span className="drone-profile-specs">
+                          <span>
+                            <small>순항속도</small>
+                            <b>{profile.cruiseSpeedMps} m/s</b>
+                          </span>
+                          <span>
+                            <small>최대속도</small>
+                            <b>{profile.maxSpeedMps} m/s</b>
+                          </span>
+                          <span>
+                            <small>최대 비행</small>
+                            <b>{profile.maxFlightTimeMin}분</b>
+                          </span>
+                          <span>
+                            <small>배터리</small>
+                            <b>
+                              {profile.batteryCapacityMah.toLocaleString()} mAh
+                            </b>
+                          </span>
+                          <span>
+                            <small>에너지</small>
+                            <b>{profile.batteryEnergyWh} Wh</b>
+                          </span>
+                          <span>
+                            <small>이륙중량</small>
+                            <b>{profile.takeoffWeightG.toLocaleString()} g</b>
+                          </span>
+                          <span>
+                            <small>내풍 성능</small>
+                            <b>{profile.maxWindResistanceMps} m/s</b>
+                          </span>
+                          <span>
+                            <small>최대 전송</small>
+                            <b>{profile.transmissionRangeKm} km</b>
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <DialogFooter className="drone-profile-actions">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPendingDronePoint(null);
+                      setInteraction('inspect');
+                    }}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!pendingDronePoint) return;
+                      addDroneAt(pendingDronePoint, pendingDroneProfileId);
+                    }}
+                  >
+                    <Satellite /> 선택 기체 배치
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
             <Dialog open={droneStatusOpen} onOpenChange={setDroneStatusOpen}>
               <DialogContent className="drone-status-dialog">
                 <DialogHeader>
@@ -2178,6 +2294,7 @@ export default function SkygridApp() {
                 <div className="drone-status-table" aria-label="기체 현황표">
                   <div className="drone-status-head">
                     <span>기체</span>
+                    <span>기종</span>
                     <span>상태</span>
                     <span>배터리</span>
                     <span>속도</span>
@@ -2202,6 +2319,7 @@ export default function SkygridApp() {
                           <i style={{ background: drone.color }} />
                           {drone.id}
                         </span>
+                        <span>{drone.model}</span>
                         <span>{statusLabel}</span>
                         <strong>{drone.battery.toFixed(0)}%</strong>
                         <span>

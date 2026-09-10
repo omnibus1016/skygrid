@@ -7,6 +7,12 @@ export type AppMode =
 export type PlannerKind = 'rl' | 'nearest' | 'priority';
 export type DroneStatus = 'ready' | 'active' | 'failed' | 'returning';
 export type DronePhase = 'base' | 'transit' | 'dwell' | 'return';
+export type DroneProfileId =
+  | 'dji-mavic-4-pro'
+  | 'dji-air-3s'
+  | 'dji-mini-5-pro'
+  | 'dji-mavic-pro'
+  | 'dji-avata-2';
 
 export interface GeoPoint {
   lat: number;
@@ -37,6 +43,7 @@ export interface NoFlyZone {
 
 export interface Drone extends GeoPoint {
   id: string;
+  profileId: DroneProfileId;
   model: string;
   color: string;
   homeLat: number;

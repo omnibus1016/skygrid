@@ -1,4 +1,9 @@
 import { haversineMeters, moveToward, polylineDistance } from './geo';
+import {
+  DEFAULT_DRONE_PROFILE_ID,
+  getDroneProfile,
+  profileSimulationValues,
+} from './drone-profiles';
 import { mulberry32 } from './random';
 import {
   assignRoutes,
@@ -35,39 +40,6 @@ const COLORS = [
   '#fb7185',
   '#60a5fa',
 ];
-const MODELS = [
-  {
-    model: 'DJI MAVIC PRO',
-    speedMps: 10,
-    turnRateDps: 120,
-    consumptionPerKm: 9.6,
-    loiterConsumptionPerMin: 1.05,
-    maxBattery: 92,
-    reserveBattery: 20,
-    turnaroundSec: 45,
-  },
-  {
-    model: 'DJI AVATA 2',
-    speedMps: 12,
-    turnRateDps: 180,
-    consumptionPerKm: 13.8,
-    loiterConsumptionPerMin: 1.45,
-    maxBattery: 90,
-    reserveBattery: 22,
-    turnaroundSec: 50,
-  },
-  {
-    model: 'SIM SCOUT-S',
-    speedMps: 11,
-    turnRateDps: 140,
-    consumptionPerKm: 10.4,
-    loiterConsumptionPerMin: 1.15,
-    maxBattery: 90,
-    reserveBattery: 20,
-    turnaroundSec: 40,
-  },
-];
-
 function makeEvent(
   time: number,
   kind: MissionEvent['kind'],
@@ -136,29 +108,22 @@ export function createMission(
   const drones: Drone[] = Array.from(
     { length: config.droneCount },
     (_, index) => {
-      const profile = MODELS[index % MODELS.length];
+      const profile = getDroneProfile(DEFAULT_DRONE_PROFILE_ID);
+      const performance = profileSimulationValues(profile);
       const stagingOffset = (index - (config.droneCount - 1) / 2) * 0.00007;
       return {
         id: `UAV-${String(index + 1).padStart(2, '0')}`,
-        model: profile.model,
+        ...performance,
         color: COLORS[index % COLORS.length],
         lat: BASE.lat + stagingOffset,
         lng: BASE.lng + stagingOffset * 0.7,
         homeLat: BASE.lat,
         homeLng: BASE.lng,
-        speedMps: profile.speedMps,
-        turnRateDps: profile.turnRateDps,
-        battery: profile.maxBattery,
-        reserveBattery: profile.reserveBattery,
-        consumptionPerKm: profile.consumptionPerKm,
-        loiterConsumptionPerMin: profile.loiterConsumptionPerMin,
-        maxBattery: profile.maxBattery,
-        turnaroundSec: profile.turnaroundSec,
         turnaroundRemainingSec: 0,
         dwellRemainingSec: 0,
         phase: 'base',
         sortieCount: 0,
-        minimumBattery: profile.maxBattery,
+        minimumBattery: performance.maxBattery,
         status: 'ready',
         route: [],
         routeIndex: 0,
