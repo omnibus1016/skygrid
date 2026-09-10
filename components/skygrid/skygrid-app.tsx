@@ -1285,6 +1285,12 @@ export default function SkygridApp() {
             <TabsTrigger value="simulation" className="mission-tab">
               <Bot /> 가상 실험
             </TabsTrigger>
+            <TabsTrigger value="evaluation" className="mission-tab">
+              <FileChartColumn /> 성능 비교
+            </TabsTrigger>
+            <TabsTrigger value="training" className="mission-tab">
+              <BrainCircuit /> AI 학습
+            </TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="header-status">
@@ -1295,1006 +1301,1188 @@ export default function SkygridApp() {
         </div>
       </header>
 
-      <section className="mission-shell">
-        <aside className="left-rail">
-          {mode === 'simulation' && (
-            <>
-              <div className="rail-section">
-                <div className="section-heading">
-                  <span>가상 실험</span>
-                  <span>{formatMissionTime(mission.time)}</span>
-                </div>
-                <div className="button-pair">
-                  <Button
-                    className="primary-command"
-                    onClick={toggleMission}
-                    disabled={!mission.running && !missionReady}
-                  >
-                    {mission.running ? <Pause /> : <Play />}
-                    {mission.running ? '일시 정지' : '실험 시작'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="icon-command"
-                    size="icon"
-                    onClick={() => applyScenario()}
-                    aria-label="시뮬레이션 초기화"
-                    title="초기 시나리오로 기체와 정찰지점을 새로 생성"
-                  >
-                    <RefreshCw />
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  className="mt-2 h-9 w-full justify-start"
-                  onClick={stepSimulation}
-                  disabled={
-                    mission.running || mission.completed || !missionReady
-                  }
-                >
-                  <StepForward /> 10초 단위 진행
-                </Button>
-                {!missionReady && (
-                  <div className="empty-inline" role="status">
-                    {!mission.drones.length && !mission.waypoints.length
-                      ? '기체와 정찰지점을 추가해야 임무를 시작할 수 있습니다.'
-                      : !mission.drones.length
-                        ? '기체를 추가해야 임무를 시작할 수 있습니다.'
-                        : '정찰지점을 추가해야 임무를 시작할 수 있습니다.'}
-                  </div>
-                )}
-              </div>
-
-              <DropoutControl
-                drones={mission.drones}
-                droneId={activeDropoutDroneId}
-                reason={dropoutReason}
-                onDroneChange={setDropoutDroneId}
-                onReasonChange={setDropoutReason}
-                onExecute={executeDropout}
-              />
-
-              <div className="rail-section parameter-panel">
-                <div className="section-heading">
-                  <span>실험 조건</span>
-                  <SlidersHorizontal size={14} />
-                </div>
-                <ParameterSlider
-                  label="초기 기체"
-                  value={config.droneCount}
-                  suffix="대"
-                  min={0}
-                  max={10}
-                  step={1}
-                  onChange={(value) =>
-                    setConfig((current) => ({
-                      ...current,
-                      droneCount: value,
-                      failureDroneId: value < 2 ? 'UAV-01' : 'UAV-02',
-                    }))
-                  }
-                />
-                <ParameterSlider
-                  label="초기 정찰지점"
-                  value={config.waypointCount}
-                  suffix="개"
-                  min={6}
-                  max={30}
-                  step={1}
-                  onChange={(value) =>
-                    setConfig((current) => ({
-                      ...current,
-                      waypointCount: value,
-                    }))
-                  }
-                />
-                <ParameterSlider
-                  label="이탈 시점"
-                  value={config.failureAt}
-                  suffix="초"
-                  min={30}
-                  max={360}
-                  step={10}
-                  onChange={(value) =>
-                    setConfig((current) => ({ ...current, failureAt: value }))
-                  }
-                />
-                <ParameterSlider
-                  label="실험 배속"
-                  value={config.simRate}
-                  suffix="×"
-                  min={1}
-                  max={20}
-                  step={1}
-                  onChange={(value) =>
-                    setConfig((current) => ({ ...current, simRate: value }))
-                  }
-                />
-                <label className="control-label" htmlFor="planner-select">
-                  재계획 알고리즘
-                </label>
-                <Select
-                  value={config.planner}
-                  onValueChange={(value) =>
-                    setConfig((current) => ({
-                      ...current,
-                      planner: value as PlannerKind,
-                    }))
-                  }
-                >
-                  <SelectTrigger id="planner-select" className="control-select">
-                    <SelectValue>{PLANNER_LABEL[config.planner]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="rl">다중 에이전트 DQN</SelectItem>
-                    <SelectItem value="nearest">최근접 우선</SelectItem>
-                    <SelectItem value="priority">중요도 우선</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  className="mt-3 h-9 w-full"
-                  onClick={applySimulationSettings}
-                >
-                  <CheckCircle2 /> 설정 적용
-                </Button>
-              </div>
-
-              <WaypointEditor
-                selected={selectedWaypoint}
-                onChange={updateWaypoint}
-                onDelete={deleteSelectedWaypoint}
-                onReplan={() => replanNow()}
-              />
-            </>
-          )}
-
-          {mode === 'field' && (
-            <>
-              <div className="rail-section">
-                <div className="section-heading">
-                  <span>현장 임무 기록</span>
-                  <span>{formatMissionTime(mission.time)}</span>
-                </div>
-                <div className="button-pair">
-                  <Button
-                    className="primary-command"
-                    onClick={toggleMission}
-                    disabled={!mission.running && !missionReady}
-                  >
-                    {mission.running ? <Pause /> : <Play />}
-                    {mission.running ? '기록 정지' : '기록 시작'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="icon-command"
-                    onClick={() => applyScenario()}
-                    aria-label="현장 임무 초기화"
-                    title="초기 시나리오로 기체와 정찰지점을 새로 생성"
-                  >
-                    <RefreshCw />
-                  </Button>
-                </div>
-              </div>
-
-              <DropoutControl
-                drones={mission.drones}
-                droneId={activeDropoutDroneId}
-                reason={dropoutReason}
-                onDroneChange={setDropoutDroneId}
-                onReasonChange={setDropoutReason}
-                onExecute={executeDropout}
-              />
-
-              {selectedDrone && (
+      {mode === 'training' ? (
+        <TrainingWorkspace
+          policyBundle={policyBundle}
+          trainingEpisodes={trainingEpisodes}
+          onTrainingEpisodesChange={setTrainingEpisodes}
+          onTrain={trainAgain}
+          onRestore={restoreDefaultPolicy}
+          busy={busyAction === 'train'}
+        />
+      ) : mode === 'evaluation' ? (
+        <EvaluationWorkspace
+          results={batchResults}
+          onRun={runBatch}
+          busy={busyAction === 'batch'}
+          scenarioResults={scenarioComparison}
+          onCompare={runCurrentScenarioComparison}
+          comparisonReady={
+            Boolean(comparisonBaseline) &&
+            !mission.running &&
+            mission.time > (comparisonBaseline?.time ?? 0)
+          }
+          comparisonBusy={busyAction === 'compare'}
+          missionTime={mission.time}
+        />
+      ) : (
+        <section className="mission-shell">
+          <aside className="left-rail">
+            {mode === 'simulation' && (
+              <>
                 <div className="rail-section">
                   <div className="section-heading">
-                    <span>기체 상태</span>
-                    <span>{mission.drones.length}대</span>
+                    <span>가상 실험</span>
+                    <span>{formatMissionTime(mission.time)}</span>
                   </div>
-                  <div className="aircraft-selector">
-                    {mission.drones.map((drone) => (
-                      <button
-                        key={drone.id}
-                        type="button"
-                        className={drone.id === selectedDroneId ? 'active' : ''}
-                        onClick={() => setSelectedDroneId(drone.id)}
-                      >
-                        <i style={{ background: drone.color }} />
-                        <span>{drone.id}</span>
-                        <b>
-                          {drone.status === 'failed'
-                            ? '이탈'
-                            : `${drone.battery.toFixed(0)}%`}
-                        </b>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="selected-aircraft">
-                    <span
-                      className="drone-dot"
-                      style={{
-                        color: selectedDrone.color,
-                        borderColor: selectedDrone.color,
-                      }}
+                  <div className="button-pair">
+                    <Button
+                      className="primary-command"
+                      onClick={toggleMission}
+                      disabled={!mission.running && !missionReady}
                     >
-                      <Satellite />
-                    </span>
-                    <div>
-                      <strong>{selectedDrone.model}</strong>
-                      <span>
-                        {selectedDrone.status.toUpperCase()} ·{' '}
-                        {selectedDrone.speedMps} m/s
-                      </span>
-                    </div>
-                  </div>
-                  <ParameterSlider
-                    label="현재 배터리"
-                    value={Math.round(selectedDrone.battery)}
-                    suffix="%"
-                    min={10}
-                    max={100}
-                    step={1}
-                    onChange={updateSelectedDroneBattery}
-                  />
-                  <Button
-                    className="mt-3 h-10 w-full"
-                    onClick={() => replanNow('rl')}
-                    disabled={selectedDrone.status === 'failed'}
-                  >
-                    <BrainCircuit /> AI 경로 재계산
-                  </Button>
-                  {selectedDrone.status === 'failed' && (
+                      {mission.running ? <Pause /> : <Play />}
+                      {mission.running ? '일시 정지' : '실험 시작'}
+                    </Button>
                     <Button
                       variant="outline"
-                      className="mt-2 h-9 w-full"
-                      onClick={recoverSelectedDrone}
+                      className="icon-command"
+                      size="icon"
+                      onClick={() => applyScenario()}
+                      aria-label="시뮬레이션 초기화"
+                      title="초기 시나리오로 기체와 정찰지점을 새로 생성"
                     >
-                      <RefreshCw /> 선택 기체 임무 복귀
+                      <RefreshCw />
                     </Button>
-                  )}
-                </div>
-              )}
-
-              <WaypointEditor
-                selected={selectedWaypoint}
-                onChange={updateWaypoint}
-                onDelete={deleteSelectedWaypoint}
-                onVisit={reportWaypointVisit}
-                onReplan={() => replanNow()}
-              />
-            </>
-          )}
-
-          {mode === 'analysis' && (
-            <>
-              <div className="rail-section">
-                <div className="section-heading">
-                  <span>비행 로그</span>
-                  <span>{logs.length}개 로그</span>
-                </div>
-                <div className="button-stack">
-                  <Button
-                    className="primary-command justify-start"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload /> DJI CSV 불러오기
-                  </Button>
+                  </div>
                   <Button
                     variant="outline"
-                    className="justify-start"
-                    onClick={() => {
-                      const demo = createDemoLogs(mission);
-                      setLogs(demo);
-                      setSelectedLogId(demo[0]?.id ?? '');
-                      setUploadError('');
-                    }}
+                    className="mt-2 h-9 w-full justify-start"
+                    onClick={stepSimulation}
+                    disabled={
+                      mission.running || mission.completed || !missionReady
+                    }
                   >
-                    <Sparkles /> 검증용 예제 데이터
+                    <StepForward /> 10초 단위 진행
+                  </Button>
+                  {!missionReady && (
+                    <div className="empty-inline" role="status">
+                      {!mission.drones.length && !mission.waypoints.length
+                        ? '기체와 정찰지점을 추가해야 임무를 시작할 수 있습니다.'
+                        : !mission.drones.length
+                          ? '기체를 추가해야 임무를 시작할 수 있습니다.'
+                          : '정찰지점을 추가해야 임무를 시작할 수 있습니다.'}
+                    </div>
+                  )}
+                </div>
+
+                <DropoutControl
+                  drones={mission.drones}
+                  droneId={activeDropoutDroneId}
+                  reason={dropoutReason}
+                  onDroneChange={setDropoutDroneId}
+                  onReasonChange={setDropoutReason}
+                  onExecute={executeDropout}
+                />
+
+                <div className="rail-section parameter-panel">
+                  <div className="section-heading">
+                    <span>실험 조건</span>
+                    <SlidersHorizontal size={14} />
+                  </div>
+                  <ParameterSlider
+                    label="초기 기체"
+                    value={config.droneCount}
+                    suffix="대"
+                    min={0}
+                    max={10}
+                    step={1}
+                    onChange={(value) =>
+                      setConfig((current) => ({
+                        ...current,
+                        droneCount: value,
+                        failureDroneId: value < 2 ? 'UAV-01' : 'UAV-02',
+                      }))
+                    }
+                  />
+                  <ParameterSlider
+                    label="초기 정찰지점"
+                    value={config.waypointCount}
+                    suffix="개"
+                    min={6}
+                    max={30}
+                    step={1}
+                    onChange={(value) =>
+                      setConfig((current) => ({
+                        ...current,
+                        waypointCount: value,
+                      }))
+                    }
+                  />
+                  <ParameterSlider
+                    label="이탈 시점"
+                    value={config.failureAt}
+                    suffix="초"
+                    min={30}
+                    max={360}
+                    step={10}
+                    onChange={(value) =>
+                      setConfig((current) => ({ ...current, failureAt: value }))
+                    }
+                  />
+                  <ParameterSlider
+                    label="실험 배속"
+                    value={config.simRate}
+                    suffix="×"
+                    min={1}
+                    max={20}
+                    step={1}
+                    onChange={(value) =>
+                      setConfig((current) => ({ ...current, simRate: value }))
+                    }
+                  />
+                  <label className="control-label" htmlFor="planner-select">
+                    재계획 알고리즘
+                  </label>
+                  <Select
+                    value={config.planner}
+                    onValueChange={(value) =>
+                      setConfig((current) => ({
+                        ...current,
+                        planner: value as PlannerKind,
+                      }))
+                    }
+                  >
+                    <SelectTrigger
+                      id="planner-select"
+                      className="control-select"
+                    >
+                      <SelectValue>{PLANNER_LABEL[config.planner]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rl">다중 에이전트 DQN</SelectItem>
+                      <SelectItem value="nearest">최근접 우선</SelectItem>
+                      <SelectItem value="priority">중요도 우선</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    className="mt-3 h-9 w-full"
+                    onClick={applySimulationSettings}
+                  >
+                    <CheckCircle2 /> 설정 적용
                   </Button>
                 </div>
-                {uploadError && (
-                  <div className="error-notice">
-                    <AlertTriangle />
-                    {uploadError}
+
+                <WaypointEditor
+                  selected={selectedWaypoint}
+                  onChange={updateWaypoint}
+                  onDelete={deleteSelectedWaypoint}
+                  onReplan={() => replanNow()}
+                />
+              </>
+            )}
+
+            {mode === 'field' && (
+              <>
+                <div className="rail-section">
+                  <div className="section-heading">
+                    <span>현장 임무 기록</span>
+                    <span>{formatMissionTime(mission.time)}</span>
+                  </div>
+                  <div className="button-pair">
+                    <Button
+                      className="primary-command"
+                      onClick={toggleMission}
+                      disabled={!mission.running && !missionReady}
+                    >
+                      {mission.running ? <Pause /> : <Play />}
+                      {mission.running ? '기록 정지' : '기록 시작'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="icon-command"
+                      onClick={() => applyScenario()}
+                      aria-label="현장 임무 초기화"
+                      title="초기 시나리오로 기체와 정찰지점을 새로 생성"
+                    >
+                      <RefreshCw />
+                    </Button>
+                  </div>
+                </div>
+
+                <DropoutControl
+                  drones={mission.drones}
+                  droneId={activeDropoutDroneId}
+                  reason={dropoutReason}
+                  onDroneChange={setDropoutDroneId}
+                  onReasonChange={setDropoutReason}
+                  onExecute={executeDropout}
+                />
+
+                {selectedDrone && (
+                  <div className="rail-section">
+                    <div className="section-heading">
+                      <span>기체 상태</span>
+                      <span>{mission.drones.length}대</span>
+                    </div>
+                    <div className="aircraft-selector">
+                      {mission.drones.map((drone) => (
+                        <button
+                          key={drone.id}
+                          type="button"
+                          className={
+                            drone.id === selectedDroneId ? 'active' : ''
+                          }
+                          onClick={() => setSelectedDroneId(drone.id)}
+                        >
+                          <i style={{ background: drone.color }} />
+                          <span>{drone.id}</span>
+                          <b>
+                            {drone.status === 'failed'
+                              ? '이탈'
+                              : `${drone.battery.toFixed(0)}%`}
+                          </b>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="selected-aircraft">
+                      <span
+                        className="drone-dot"
+                        style={{
+                          color: selectedDrone.color,
+                          borderColor: selectedDrone.color,
+                        }}
+                      >
+                        <Satellite />
+                      </span>
+                      <div>
+                        <strong>{selectedDrone.model}</strong>
+                        <span>
+                          {selectedDrone.status.toUpperCase()} ·{' '}
+                          {selectedDrone.speedMps} m/s
+                        </span>
+                      </div>
+                    </div>
+                    <ParameterSlider
+                      label="현재 배터리"
+                      value={Math.round(selectedDrone.battery)}
+                      suffix="%"
+                      min={10}
+                      max={100}
+                      step={1}
+                      onChange={updateSelectedDroneBattery}
+                    />
+                    <Button
+                      className="mt-3 h-10 w-full"
+                      onClick={() => replanNow('rl')}
+                      disabled={selectedDrone.status === 'failed'}
+                    >
+                      <BrainCircuit /> AI 경로 재계산
+                    </Button>
+                    {selectedDrone.status === 'failed' && (
+                      <Button
+                        variant="outline"
+                        className="mt-2 h-9 w-full"
+                        onClick={recoverSelectedDrone}
+                      >
+                        <RefreshCw /> 선택 기체 임무 복귀
+                      </Button>
+                    )}
                   </div>
                 )}
-              </div>
-              <div className="rail-section flex-1">
-                <div className="section-heading">
-                  <span>로그 목록</span>
-                  <FileChartColumn size={14} />
-                </div>
-                <div className="log-list">
-                  {logs.map((log) => {
-                    const result = calculateLogMetrics(log);
-                    return (
-                      <button
-                        key={log.id}
-                        type="button"
-                        aria-label={`${log.droneName} 비행 로그 선택`}
-                        aria-pressed={selectedLog?.id === log.id}
-                        className={`log-item ${selectedLog?.id === log.id ? 'active' : ''}`}
-                        onClick={() => setSelectedLogId(log.id)}
-                      >
-                        <span
-                          className="log-color"
-                          style={{ background: log.color }}
-                        />
-                        <div>
-                          <strong>{log.droneName}</strong>
-                          <span>
-                            {result.sampleCount.toLocaleString()} samples ·{' '}
-                            {formatMissionTime(result.durationSec)}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                className="h-10"
-                onClick={exportAnalysis}
-                disabled={!logs.length}
-              >
-                <Download /> 분석표 CSV 내보내기
-              </Button>
-            </>
-          )}
-        </aside>
 
-        <section className="map-stage">
-          <div className="map-toolbar">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="map-badge">
-                <MapIcon /> 청주 시험구역 / WGS84
-              </Badge>
-              {mode !== 'analysis' && (
-                <Badge
+                <WaypointEditor
+                  selected={selectedWaypoint}
+                  onChange={updateWaypoint}
+                  onDelete={deleteSelectedWaypoint}
+                  onVisit={reportWaypointVisit}
+                  onReplan={() => replanNow()}
+                />
+              </>
+            )}
+
+            {mode === 'analysis' && (
+              <>
+                <div className="rail-section">
+                  <div className="section-heading">
+                    <span>비행 로그</span>
+                    <span>{logs.length}개 로그</span>
+                  </div>
+                  <div className="button-stack">
+                    <Button
+                      className="primary-command justify-start"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload /> DJI CSV 불러오기
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => {
+                        const demo = createDemoLogs(mission);
+                        setLogs(demo);
+                        setSelectedLogId(demo[0]?.id ?? '');
+                        setUploadError('');
+                      }}
+                    >
+                      <Sparkles /> 검증용 예제 데이터
+                    </Button>
+                  </div>
+                  {uploadError && (
+                    <div className="error-notice">
+                      <AlertTriangle />
+                      {uploadError}
+                    </div>
+                  )}
+                </div>
+                <div className="rail-section flex-1">
+                  <div className="section-heading">
+                    <span>로그 목록</span>
+                    <FileChartColumn size={14} />
+                  </div>
+                  <div className="log-list">
+                    {logs.map((log) => {
+                      const result = calculateLogMetrics(log);
+                      return (
+                        <button
+                          key={log.id}
+                          type="button"
+                          aria-label={`${log.droneName} 비행 로그 선택`}
+                          aria-pressed={selectedLog?.id === log.id}
+                          className={`log-item ${selectedLog?.id === log.id ? 'active' : ''}`}
+                          onClick={() => setSelectedLogId(log.id)}
+                        >
+                          <span
+                            className="log-color"
+                            style={{ background: log.color }}
+                          />
+                          <div>
+                            <strong>{log.droneName}</strong>
+                            <span>
+                              {result.sampleCount.toLocaleString()} samples ·{' '}
+                              {formatMissionTime(result.durationSec)}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <Button
                   variant="outline"
-                  className={
-                    mission.failureTriggered
-                      ? 'event-badge danger'
-                      : 'event-badge'
+                  className="h-10"
+                  onClick={exportAnalysis}
+                  disabled={!logs.length}
+                >
+                  <Download /> 분석표 CSV 내보내기
+                </Button>
+              </>
+            )}
+          </aside>
+
+          <section className="map-stage">
+            <div className="map-toolbar">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="map-badge">
+                  <MapIcon /> 청주 시험구역 / WGS84
+                </Badge>
+                {mode !== 'analysis' && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      mission.failureTriggered
+                        ? 'event-badge danger'
+                        : 'event-badge'
+                    }
+                  >
+                    <CircleDot />{' '}
+                    {mission.failureTriggered
+                      ? '기체 이탈 · 재계획 완료'
+                      : mode === 'field'
+                        ? '운용자 상태 입력 대기'
+                        : `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`}
+                  </Badge>
+                )}
+                {mode === 'analysis' && (
+                  <Badge variant="outline" className="event-badge">
+                    <Database /> 비행기록 {logs.length}개 중첩
+                  </Badge>
+                )}
+              </div>
+              <div className="map-toolbar-right">
+                <div className="layer-switch" aria-label="지도 배경 선택">
+                  <button
+                    type="button"
+                    className={mapBase === 'satellite' ? 'active' : ''}
+                    onClick={() => setMapBase('satellite')}
+                  >
+                    <Satellite /> 위성
+                  </button>
+                  <button
+                    type="button"
+                    className={mapBase === 'street' ? 'active' : ''}
+                    onClick={() => setMapBase('street')}
+                  >
+                    <MapIcon /> 지도
+                  </button>
+                </div>
+                <div className="map-mode-label">
+                  <span className="status-pulse" />
+                  {mode === 'field'
+                    ? '현장 입력'
+                    : mode === 'analysis'
+                      ? '로그 재생'
+                      : '가상 실험'}
+                </div>
+              </div>
+            </div>
+
+            {mode !== 'analysis' && (
+              <div className="map-edit-toolbar">
+                <button
+                  type="button"
+                  className="map-tool"
+                  onClick={() => setDroneStatusOpen(true)}
+                >
+                  <List /> 기체 현황
+                </button>
+                <button
+                  type="button"
+                  className={`map-tool ${interaction === 'add-waypoint' ? 'active' : ''}`}
+                  onClick={() =>
+                    setInteraction(
+                      interaction === 'add-waypoint'
+                        ? 'inspect'
+                        : 'add-waypoint',
+                    )
                   }
                 >
-                  <CircleDot />{' '}
-                  {mission.failureTriggered
-                    ? '기체 이탈 · 재계획 완료'
-                    : mode === 'field'
-                      ? '운용자 상태 입력 대기'
-                      : `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`}
-                </Badge>
-              )}
-              {mode === 'analysis' && (
-                <Badge variant="outline" className="event-badge">
-                  <Database /> 비행기록 {logs.length}개 중첩
-                </Badge>
-              )}
-            </div>
-            <div className="map-toolbar-right">
-              <div className="layer-switch" aria-label="지도 배경 선택">
-                <button
-                  type="button"
-                  className={mapBase === 'satellite' ? 'active' : ''}
-                  onClick={() => setMapBase('satellite')}
-                >
-                  <Satellite /> 위성
+                  <MapPinPlus /> 정찰지점 추가
                 </button>
                 <button
                   type="button"
-                  className={mapBase === 'street' ? 'active' : ''}
-                  onClick={() => setMapBase('street')}
+                  className={`map-tool ${interaction === 'add-drone' ? 'active' : ''}`}
+                  onClick={() =>
+                    setInteraction(
+                      interaction === 'add-drone' ? 'inspect' : 'add-drone',
+                    )
+                  }
                 >
-                  <MapIcon /> 지도
+                  <Satellite /> 기체 추가
                 </button>
+                <button
+                  type="button"
+                  className="map-tool danger"
+                  onClick={deleteSelectedMapEntity}
+                  disabled={!canDeleteSelectedEntity}
+                >
+                  <Trash2 /> {deleteTargetLabel} 삭제
+                </button>
+                <button
+                  type="button"
+                  className="map-tool"
+                  onClick={() => replanNow()}
+                >
+                  <BrainCircuit /> 경로 재계산
+                </button>
+                <button
+                  type="button"
+                  className={`map-tool ${interaction === 'move-drone' ? 'active' : ''}`}
+                  onClick={() =>
+                    setInteraction(
+                      interaction === 'move-drone' ? 'inspect' : 'move-drone',
+                    )
+                  }
+                  disabled={!selectedDrone}
+                >
+                  <LocateFixed /> {selectedDroneId || '기체'} 위치 지정
+                </button>
+                {interaction !== 'inspect' && (
+                  <span className="map-click-guide">
+                    <Crosshair />
+                    {interaction === 'move-drone'
+                      ? `${selectedDroneId}를 이동할 위치를 클릭하세요`
+                      : interaction === 'add-drone'
+                        ? '기체를 배치할 위치를 클릭하세요'
+                        : '정찰지점을 등록할 위치를 클릭하세요'}
+                  </span>
+                )}
               </div>
-              <div className="map-mode-label">
-                <span className="status-pulse" />
-                {mode === 'field'
-                  ? '현장 입력'
-                  : mode === 'analysis'
-                    ? '로그 재생'
-                    : '가상 실험'}
-              </div>
-            </div>
-          </div>
+            )}
 
-          {mode !== 'analysis' && (
-            <div className="map-edit-toolbar">
-              <button
-                type="button"
-                className="map-tool"
-                onClick={() => setDroneStatusOpen(true)}
-              >
-                <List /> 기체 현황
-              </button>
-              <button
-                type="button"
-                className={`map-tool ${interaction === 'add-waypoint' ? 'active' : ''}`}
-                onClick={() =>
-                  setInteraction(
-                    interaction === 'add-waypoint' ? 'inspect' : 'add-waypoint',
-                  )
+            <OperationalMap
+              mode={mode}
+              mapBase={mapBase}
+              mission={mission}
+              logs={logs}
+              selectedDroneId={selectedDroneId}
+              selectedWaypointId={selectedWaypointId}
+              interaction={interaction}
+              onMapClick={handleMapClick}
+              onMapContextMenu={handleMapContextMenu}
+              onSelectDrone={(droneId) => {
+                setSelectedDroneId(droneId);
+                setSelectedMapEntity('drone');
+              }}
+              onSelectWaypoint={(waypointId) => {
+                setSelectedWaypointId(waypointId);
+                setSelectedMapEntity('waypoint');
+              }}
+            />
+
+            {mapContextMenu && mode !== 'analysis' && (
+              <div
+                className="map-context-menu"
+                role="menu"
+                aria-label="지도 편집 메뉴"
+                onContextMenu={(event) => event.preventDefault()}
+                style={
+                  {
+                    '--context-x': `${mapContextMenu.x}px`,
+                    '--context-y': `${mapContextMenu.y}px`,
+                  } as React.CSSProperties
                 }
               >
-                <MapPinPlus /> 정찰지점 추가
-              </button>
-              <button
-                type="button"
-                className={`map-tool ${interaction === 'add-drone' ? 'active' : ''}`}
-                onClick={() =>
-                  setInteraction(
-                    interaction === 'add-drone' ? 'inspect' : 'add-drone',
-                  )
-                }
-              >
-                <Satellite /> 기체 추가
-              </button>
-              <button
-                type="button"
-                className="map-tool danger"
-                onClick={deleteSelectedMapEntity}
-                disabled={!canDeleteSelectedEntity}
-              >
-                <Trash2 /> {deleteTargetLabel} 삭제
-              </button>
-              <button
-                type="button"
-                className="map-tool"
-                onClick={() => replanNow()}
-              >
-                <BrainCircuit /> 경로 재계산
-              </button>
-              <button
-                type="button"
-                className={`map-tool ${interaction === 'move-drone' ? 'active' : ''}`}
-                onClick={() =>
-                  setInteraction(
-                    interaction === 'move-drone' ? 'inspect' : 'move-drone',
-                  )
-                }
-                disabled={!selectedDrone}
-              >
-                <LocateFixed /> {selectedDroneId || '기체'} 위치 지정
-              </button>
-              {interaction !== 'inspect' && (
-                <span className="map-click-guide">
-                  <Crosshair />
-                  {interaction === 'move-drone'
-                    ? `${selectedDroneId}를 이동할 위치를 클릭하세요`
-                    : interaction === 'add-drone'
-                      ? '기체를 배치할 위치를 클릭하세요'
-                      : '정찰지점을 등록할 위치를 클릭하세요'}
-                </span>
-              )}
-            </div>
-          )}
-
-          <OperationalMap
-            mode={mode}
-            mapBase={mapBase}
-            mission={mission}
-            logs={logs}
-            selectedDroneId={selectedDroneId}
-            selectedWaypointId={selectedWaypointId}
-            interaction={interaction}
-            onMapClick={handleMapClick}
-            onMapContextMenu={handleMapContextMenu}
-            onSelectDrone={(droneId) => {
-              setSelectedDroneId(droneId);
-              setSelectedMapEntity('drone');
-            }}
-            onSelectWaypoint={(waypointId) => {
-              setSelectedWaypointId(waypointId);
-              setSelectedMapEntity('waypoint');
-            }}
-          />
-
-          {mapContextMenu && mode !== 'analysis' && (
-            <div
-              className="map-context-menu"
-              role="menu"
-              aria-label="지도 편집 메뉴"
-              onContextMenu={(event) => event.preventDefault()}
-              style={
-                {
-                  '--context-x': `${mapContextMenu.x}px`,
-                  '--context-y': `${mapContextMenu.y}px`,
-                } as React.CSSProperties
-              }
-            >
-              <div className="map-context-title">이 위치에 추가</div>
-              <button
-                type="button"
-                onClick={() => addWaypointAt(mapContextMenu.point)}
-              >
-                <MapPinPlus /> 정찰 포인트 추가
-              </button>
-              <button
-                type="button"
-                onClick={() => addDroneAt(mapContextMenu.point)}
-              >
-                <Satellite /> 드론 추가
-              </button>
-              {(mapContextMenu.droneId || mapContextMenu.waypointId) && (
-                <div className="map-context-divider" />
-              )}
-              {mapContextMenu.droneId && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedDroneId(mapContextMenu.droneId ?? '');
-                      setSelectedMapEntity('drone');
-                      closeMapContextMenu();
-                    }}
-                  >
-                    <CheckCircle2 /> 기체 선택
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedDroneId(mapContextMenu.droneId ?? '');
-                      setSelectedMapEntity('drone');
-                      setInteraction('move-drone');
-                      closeMapContextMenu();
-                    }}
-                  >
-                    <LocateFixed /> 이 기체 위치 지정
-                  </button>
+                <div className="map-context-title">이 위치에 추가</div>
+                <button
+                  type="button"
+                  onClick={() => addWaypointAt(mapContextMenu.point)}
+                >
+                  <MapPinPlus /> 정찰 포인트 추가
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addDroneAt(mapContextMenu.point)}
+                >
+                  <Satellite /> 드론 추가
+                </button>
+                {(mapContextMenu.droneId || mapContextMenu.waypointId) && (
+                  <div className="map-context-divider" />
+                )}
+                {mapContextMenu.droneId && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDroneId(mapContextMenu.droneId ?? '');
+                        setSelectedMapEntity('drone');
+                        closeMapContextMenu();
+                      }}
+                    >
+                      <CheckCircle2 /> 기체 선택
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDroneId(mapContextMenu.droneId ?? '');
+                        setSelectedMapEntity('drone');
+                        setInteraction('move-drone');
+                        closeMapContextMenu();
+                      }}
+                    >
+                      <LocateFixed /> 이 기체 위치 지정
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() =>
+                        deleteDroneById(mapContextMenu.droneId ?? '')
+                      }
+                    >
+                      <Trash2 /> 기체 삭제
+                    </button>
+                  </>
+                )}
+                {mapContextMenu.waypointId && (
                   <button
                     type="button"
                     className="danger"
                     onClick={() =>
-                      deleteDroneById(mapContextMenu.droneId ?? '')
+                      deleteWaypointById(mapContextMenu.waypointId ?? '')
                     }
                   >
-                    <Trash2 /> 기체 삭제
+                    <Trash2 /> 정찰 포인트 삭제
                   </button>
-                </>
-              )}
-              {mapContextMenu.waypointId && (
+                )}
                 <button
                   type="button"
-                  className="danger"
-                  onClick={() =>
-                    deleteWaypointById(mapContextMenu.waypointId ?? '')
-                  }
+                  className="subtle"
+                  onClick={closeMapContextMenu}
                 >
-                  <Trash2 /> 정찰 포인트 삭제
+                  닫기
                 </button>
-              )}
-              <button
-                type="button"
-                className="subtle"
-                onClick={closeMapContextMenu}
-              >
-                닫기
-              </button>
-            </div>
-          )}
-
-          <Dialog open={droneStatusOpen} onOpenChange={setDroneStatusOpen}>
-            <DialogContent className="drone-status-dialog">
-              <DialogHeader>
-                <DialogTitle>기체 현황</DialogTitle>
-                <DialogDescription>
-                  현재 시뮬레이션 상태를 기준으로 한 기체별 정보입니다.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="drone-status-table" aria-label="기체 현황표">
-                <div className="drone-status-head">
-                  <span>기체</span>
-                  <span>상태</span>
-                  <span>배터리</span>
-                  <span>속도</span>
-                  <span>현재 목표</span>
-                  <span>위치</span>
-                </div>
-                {mission.drones.map((drone) => {
-                  const targetId = drone.route[drone.routeIndex];
-                  const statusLabel =
-                    drone.status === 'active'
-                      ? '임무 수행'
-                      : drone.status === 'failed'
-                        ? '이탈'
-                        : drone.status === 'returning'
-                          ? '복귀 중'
-                          : '대기';
-                  return (
-                    <button
-                      key={drone.id}
-                      type="button"
-                      className={`drone-status-row ${drone.id === selectedDroneId ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedDroneId(drone.id);
-                        setSelectedMapEntity('drone');
-                        setDroneStatusOpen(false);
-                      }}
-                    >
-                      <span>
-                        <i style={{ background: drone.color }} />
-                        {drone.id}
-                      </span>
-                      <span>{statusLabel}</span>
-                      <strong>{drone.battery.toFixed(0)}%</strong>
-                      <span>
-                        {drone.status === 'failed'
-                          ? '—'
-                          : `${drone.speedMps} m/s`}
-                      </span>
-                      <span>{targetId ?? '대기'}</span>
-                      <span className="drone-position">
-                        {drone.lat.toFixed(5)}, {drone.lng.toFixed(5)}
-                      </span>
-                    </button>
-                  );
-                })}
               </div>
-            </DialogContent>
-          </Dialog>
+            )}
 
-          <div className="map-footer">
-            <div>
-              <span>임무 시간</span>
-              <strong>
-                {formatMissionTime(mission.time)}.
-                {Math.floor((mission.time % 1) * 10)}
-              </strong>
-            </div>
-            <div>
-              <span>활성 / 전체</span>
-              <strong>
-                {metrics.activeDrones} / {mission.drones.length}
-              </strong>
-            </div>
-            <div>
-              <span>AI 계산</span>
-              <strong>
-                {mission.inferenceMs
-                  ? `${mission.inferenceMs.toFixed(1)} ms`
-                  : '대기'}
-              </strong>
-            </div>
-            <div>
-              <span>위치 출처</span>
-              <strong>
-                {mode === 'analysis'
-                  ? 'DJI 로그'
-                  : mode === 'field'
-                    ? '운용자 입력'
-                    : '가상'}
-              </strong>
-            </div>
-          </div>
-        </section>
+            <Dialog open={droneStatusOpen} onOpenChange={setDroneStatusOpen}>
+              <DialogContent className="drone-status-dialog">
+                <DialogHeader>
+                  <DialogTitle>기체 현황</DialogTitle>
+                  <DialogDescription>
+                    현재 시뮬레이션 상태를 기준으로 한 기체별 정보입니다.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="drone-status-table" aria-label="기체 현황표">
+                  <div className="drone-status-head">
+                    <span>기체</span>
+                    <span>상태</span>
+                    <span>배터리</span>
+                    <span>속도</span>
+                    <span>현재 목표</span>
+                    <span>위치</span>
+                  </div>
+                  {mission.drones.map((drone) => {
+                    const targetId = drone.route[drone.routeIndex];
+                    const statusLabel =
+                      drone.status === 'active'
+                        ? '임무 수행'
+                        : drone.status === 'failed'
+                          ? '이탈'
+                          : drone.status === 'returning'
+                            ? '복귀 중'
+                            : '대기';
+                    return (
+                      <button
+                        key={drone.id}
+                        type="button"
+                        className={`drone-status-row ${drone.id === selectedDroneId ? 'active' : ''}`}
+                        onClick={() => {
+                          setSelectedDroneId(drone.id);
+                          setSelectedMapEntity('drone');
+                          setDroneStatusOpen(false);
+                        }}
+                      >
+                        <span>
+                          <i style={{ background: drone.color }} />
+                          {drone.id}
+                        </span>
+                        <span>{statusLabel}</span>
+                        <strong>{drone.battery.toFixed(0)}%</strong>
+                        <span>
+                          {drone.status === 'failed'
+                            ? '—'
+                            : `${drone.speedMps} m/s`}
+                        </span>
+                        <span>{targetId ?? '대기'}</span>
+                        <span className="drone-position">
+                          {drone.lat.toFixed(5)}, {drone.lng.toFixed(5)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </DialogContent>
+            </Dialog>
 
-        <aside className="right-rail">
-          {mode === 'analysis' ? (
-            <AnalysisRail
-              metrics={selectedLogMetrics}
-              logs={logs}
-              selectedLog={selectedLog}
-              handoverSeconds={handoverSeconds}
-              flightSeries={flightSeries}
-            />
-          ) : (
-            <>
-              <div className="rail-section">
-                <div className="section-heading">
-                  <span>임무 결과</span>
-                  <span>
-                    {mission.completed
-                      ? '종료'
-                      : mission.running
-                        ? '진행 중'
-                        : '대기'}
-                  </span>
-                </div>
-                <div className="metric-hero">
-                  <div
-                    className="metric-ring"
-                    style={
-                      {
-                        '--value': `${metrics.continuity * 3.6}deg`,
-                      } as React.CSSProperties
-                    }
-                  >
-                    <span>{metrics.continuity.toFixed(0)}</span>
-                    <small>%</small>
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-100">
-                      정찰 임무 연속성
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      중요도 가중 현재 충족률
-                    </div>
-                  </div>
-                </div>
-                <div className="mission-progress">
-                  <div>
-                    <span>최초 정찰 완료율</span>
-                    <strong>{metrics.coverage.toFixed(0)}%</strong>
-                  </div>
-                  <Progress
-                    value={metrics.coverage}
-                    className="h-1.5 bg-white/10"
-                  />
-                </div>
-                <div className="metric-grid">
-                  <MetricCard
-                    icon={<Clock3 />}
-                    label="가중 공백"
-                    value={`${metrics.weightedGapSeconds.toFixed(0)} p·s`}
-                    tone={metrics.weightedGapSeconds > 100 ? 'amber' : 'cyan'}
-                  />
-                  <MetricCard
-                    icon={<TimerReset />}
-                    label="공백 회복"
-                    value={
-                      metrics.recoverySeconds === null
-                        ? '—'
-                        : `${metrics.recoverySeconds.toFixed(0)} 초`
-                    }
-                    tone={metrics.recoverySeconds !== null ? 'cyan' : 'amber'}
-                  />
-                  <MetricCard
-                    icon={<Gauge />}
-                    label="누적 거리"
-                    value={`${metrics.totalDistanceKm.toFixed(2)} km`}
-                  />
-                  <MetricCard
-                    icon={<Activity />}
-                    label="정찰 횟수"
-                    value={`${metrics.completedVisits}`}
-                  />
-                  <MetricCard
-                    icon={<BatteryMedium />}
-                    label="평균 배터리"
-                    value={`${metrics.averageBattery.toFixed(0)} %`}
-                    tone={metrics.averageBattery < 35 ? 'red' : 'cyan'}
-                  />
-                </div>
+            <div className="map-footer">
+              <div>
+                <span>임무 시간</span>
+                <strong>
+                  {formatMissionTime(mission.time)}.
+                  {Math.floor((mission.time % 1) * 10)}
+                </strong>
               </div>
+              <div>
+                <span>활성 / 전체</span>
+                <strong>
+                  {metrics.activeDrones} / {mission.drones.length}
+                </strong>
+              </div>
+              <div>
+                <span>AI 계산</span>
+                <strong>
+                  {mission.inferenceMs
+                    ? `${mission.inferenceMs.toFixed(1)} ms`
+                    : '대기'}
+                </strong>
+              </div>
+              <div>
+                <span>위치 출처</span>
+                <strong>
+                  {mode === 'analysis'
+                    ? 'DJI 로그'
+                    : mode === 'field'
+                      ? '운용자 입력'
+                      : '가상'}
+                </strong>
+              </div>
+            </div>
+          </section>
 
-              {mode === 'simulation' && (
-                <ComparisonRail
-                  results={batchResults}
-                  onRun={runBatch}
-                  busy={busyAction === 'batch'}
-                  scenarioResults={scenarioComparison}
-                  onCompare={runCurrentScenarioComparison}
-                  comparisonReady={
-                    Boolean(comparisonBaseline) &&
-                    !mission.running &&
-                    mission.time > (comparisonBaseline?.time ?? 0)
-                  }
-                  comparisonBusy={busyAction === 'compare'}
-                />
-              )}
-
-              <details className="rail-section secondary-panel">
-                <summary className="section-heading secondary-summary">
-                  <span>AI 학습 상태</span>
-                  <span className="text-cyan-300">
-                    {busyAction === 'train' ? '학습 중' : '대기'}
-                  </span>
-                </summary>
-                <div className="policy-card">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-mono text-sm text-slate-100">
-                        중앙집중형 다중 에이전트 DQN
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        13 입력 → 24 RELU → Q(s,a)
-                      </div>
-                      <div className="mt-2 flex items-center gap-2 text-xs">
-                        <span className="text-slate-500">현재 모델</span>
-                        <Badge variant="outline">
-                          {policyBundle.origin === 'custom'
-                            ? '사용자 재학습'
-                            : '기본 사전학습'}
-                        </Badge>
-                      </div>
-                    </div>
-                    <Bot className="text-cyan-300" size={20} />
-                  </div>
-                  <div className="policy-spark">
-                    <ResponsiveContainer
-                      width="100%"
-                      height="100%"
-                      minWidth={0}
-                      minHeight={0}
-                      initialDimension={{ width: 240, height: 76 }}
-                    >
-                      <AreaChart data={policyStats.rewardHistory}>
-                        <defs>
-                          <linearGradient
-                            id="reward-fill"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#67e8f9"
-                              stopOpacity=".26"
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="#67e8f9"
-                              stopOpacity="0"
-                            />
-                          </linearGradient>
-                        </defs>
-                        <Area
-                          type="monotone"
-                          dataKey="reward"
-                          stroke="#67e8f9"
-                          fill="url(#reward-fill)"
-                          strokeWidth={1.5}
-                          dot={false}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                    <span>학습 보상 추이</span>
-                  </div>
-                  <div className="confidence">
-                    <span>학습 에피소드</span>
-                    <strong>{policyStats.episodes.toLocaleString()}</strong>
-                  </div>
-                  <Progress
-                    value={Math.min(100, 100 - policyStats.epsilon * 100)}
-                    className="h-1 bg-white/10"
-                  />
-                  <dl className="policy-stats">
-                    <div>
-                      <dt>평균 보상</dt>
-                      <dd>{policyStats.averageReward.toFixed(2)}</dd>
-                    </div>
-                    <div>
-                      <dt>TD 손실</dt>
-                      <dd>{policyStats.finalLoss.toFixed(3)}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <span className="text-xs text-slate-400">
-                    새 모델 학습 횟수
-                  </span>
-                  <Select
-                    value={String(trainingEpisodes)}
-                    onValueChange={(value) =>
-                      setTrainingEpisodes(Number(value))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-32 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1000">1,000회</SelectItem>
-                      <SelectItem value="2000">2,000회</SelectItem>
-                      <SelectItem value="5000">5,000회</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  variant="outline"
-                  className="mt-3 h-8 w-full"
-                  onClick={trainAgain}
-                  disabled={busyAction !== null}
-                >
-                  <Zap
-                    className={busyAction === 'train' ? 'animate-pulse' : ''}
-                  />
-                  {busyAction === 'train'
-                    ? '정책 학습 중'
-                    : trainingEpisodes.toLocaleString() + '회 새 모델 학습'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="mt-1 h-8 w-full text-xs text-slate-400"
-                  onClick={restoreDefaultPolicy}
-                  disabled={
-                    busyAction !== null || policyBundle.origin === 'pretrained'
-                  }
-                >
-                  <RefreshCw />
-                  기본 사전학습 모델로 복원
-                </Button>
-              </details>
-
-              {mode === 'field' && (
-                <div className="rail-section flex-1">
+          <aside className="right-rail">
+            {mode === 'analysis' ? (
+              <AnalysisRail
+                metrics={selectedLogMetrics}
+                logs={logs}
+                selectedLog={selectedLog}
+                handoverSeconds={handoverSeconds}
+                flightSeries={flightSeries}
+              />
+            ) : (
+              <>
+                <div className="rail-section">
                   <div className="section-heading">
-                    <span>다음 정찰 경로</span>
-                    <span>{selectedDrone?.id}</span>
+                    <span>임무 결과</span>
+                    <span>
+                      {mission.completed
+                        ? '종료'
+                        : mission.running
+                          ? '진행 중'
+                          : '대기'}
+                    </span>
                   </div>
-                  <div className="route-order">
-                    {(
-                      selectedDrone?.route.slice(
-                        selectedDrone.routeIndex,
-                        selectedDrone.routeIndex + 6,
-                      ) ?? []
-                    ).map((id, index) => (
-                      <div key={`${id}-${index}`}>
-                        <span>{index + 1}</span>
-                        <strong>{id}</strong>
-                        <i>
-                          {mission.waypoints.find(
-                            (waypoint) => waypoint.id === id,
-                          )?.priority ?? 0}{' '}
-                          중요도
-                        </i>
-                      </div>
-                    ))}
-                    {!selectedDrone?.route.length && (
-                      <div className="empty-inline">
-                        경로 재계산을 실행하십시오.
-                      </div>
-                    )}
-                  </div>
-                  <div className="section-heading mt-4">
-                    <span>정찰 우선순위</span>
-                    <span>상위 4개</span>
-                  </div>
-                  <div className="q-rank">
-                    {candidateScores.map(({ waypoint, score }, index) => (
-                      <div key={waypoint.id}>
-                        <span>{index + 1}</span>
-                        <strong>{waypoint.id}</strong>
-                        <div>
-                          <i
-                            style={{
-                              width: `${Math.max(12, Math.min(100, 50 + score * 4))}%`,
-                            }}
-                          />
-                        </div>
-                        <b>{score.toFixed(2)}</b>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="rail-section event-section">
-                <div className="section-heading">
-                  <span>최근 기록</span>
-                  <span>{mission.events.length}건</span>
-                </div>
-                <ol className="event-list">
-                  {mission.events.slice(0, 5).map((event) => (
-                    <li
-                      key={event.id}
-                      className={
-                        event.kind === 'failure' || event.kind === 'warning'
-                          ? 'warning'
-                          : event.kind === 'replan'
-                            ? 'success'
-                            : ''
+                  <div className="metric-hero">
+                    <div
+                      className="metric-ring"
+                      style={
+                        {
+                          '--value': `${metrics.continuity * 3.6}deg`,
+                        } as React.CSSProperties
                       }
                     >
-                      <time>{formatMissionTime(event.time)}</time>
-                      <div>
-                        <strong>{event.title}</strong>
-                        <span>{event.detail}</span>
+                      <span>{metrics.continuity.toFixed(0)}</span>
+                      <small>%</small>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-100">
+                        정찰 임무 연속성
                       </div>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </>
-          )}
-        </aside>
-      </section>
+                      <div className="mt-1 text-xs text-slate-500">
+                        중요도 가중 현재 충족률
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mission-progress">
+                    <div>
+                      <span>최초 정찰 완료율</span>
+                      <strong>{metrics.coverage.toFixed(0)}%</strong>
+                    </div>
+                    <Progress
+                      value={metrics.coverage}
+                      className="h-1.5 bg-white/10"
+                    />
+                  </div>
+                  <div className="metric-grid">
+                    <MetricCard
+                      icon={<Clock3 />}
+                      label="가중 공백"
+                      value={`${metrics.weightedGapSeconds.toFixed(0)} p·s`}
+                      tone={metrics.weightedGapSeconds > 100 ? 'amber' : 'cyan'}
+                    />
+                    <MetricCard
+                      icon={<TimerReset />}
+                      label="공백 회복"
+                      value={
+                        metrics.recoverySeconds === null
+                          ? '—'
+                          : `${metrics.recoverySeconds.toFixed(0)} 초`
+                      }
+                      tone={metrics.recoverySeconds !== null ? 'cyan' : 'amber'}
+                    />
+                    <MetricCard
+                      icon={<Gauge />}
+                      label="누적 거리"
+                      value={`${metrics.totalDistanceKm.toFixed(2)} km`}
+                    />
+                    <MetricCard
+                      icon={<Activity />}
+                      label="정찰 횟수"
+                      value={`${metrics.completedVisits}`}
+                    />
+                    <MetricCard
+                      icon={<BatteryMedium />}
+                      label="평균 배터리"
+                      value={`${metrics.averageBattery.toFixed(0)} %`}
+                      tone={metrics.averageBattery < 35 ? 'red' : 'cyan'}
+                    />
+                  </div>
+                </div>
+
+                <div className="rail-section compact-nav-card">
+                  <div className="section-heading">
+                    <span>AI 학습</span>
+                    <BrainCircuit size={14} />
+                  </div>
+                  <p>모델을 재학습하거나 기본 모델을 복원할 수 있습니다.</p>
+                  <Button
+                    variant="outline"
+                    className="mt-2 h-9 w-full"
+                    onClick={() => setMode('training')}
+                  >
+                    <BrainCircuit /> AI 학습 페이지 열기
+                  </Button>
+                </div>
+                {mode === 'field' && (
+                  <div className="rail-section flex-1">
+                    <div className="section-heading">
+                      <span>다음 정찰 경로</span>
+                      <span>{selectedDrone?.id}</span>
+                    </div>
+                    <div className="route-order">
+                      {(
+                        selectedDrone?.route.slice(
+                          selectedDrone.routeIndex,
+                          selectedDrone.routeIndex + 6,
+                        ) ?? []
+                      ).map((id, index) => (
+                        <div key={`${id}-${index}`}>
+                          <span>{index + 1}</span>
+                          <strong>{id}</strong>
+                          <i>
+                            {mission.waypoints.find(
+                              (waypoint) => waypoint.id === id,
+                            )?.priority ?? 0}{' '}
+                            중요도
+                          </i>
+                        </div>
+                      ))}
+                      {!selectedDrone?.route.length && (
+                        <div className="empty-inline">
+                          경로 재계산을 실행하십시오.
+                        </div>
+                      )}
+                    </div>
+                    <div className="section-heading mt-4">
+                      <span>정찰 우선순위</span>
+                      <span>상위 4개</span>
+                    </div>
+                    <div className="q-rank">
+                      {candidateScores.map(({ waypoint, score }, index) => (
+                        <div key={waypoint.id}>
+                          <span>{index + 1}</span>
+                          <strong>{waypoint.id}</strong>
+                          <div>
+                            <i
+                              style={{
+                                width: `${Math.max(12, Math.min(100, 50 + score * 4))}%`,
+                              }}
+                            />
+                          </div>
+                          <b>{score.toFixed(2)}</b>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="rail-section event-section">
+                  <div className="section-heading">
+                    <span>최근 기록</span>
+                    <span>{mission.events.length}건</span>
+                  </div>
+                  <ol className="event-list">
+                    {mission.events.slice(0, 5).map((event) => (
+                      <li
+                        key={event.id}
+                        className={
+                          event.kind === 'failure' || event.kind === 'warning'
+                            ? 'warning'
+                            : event.kind === 'replan'
+                              ? 'success'
+                              : ''
+                        }
+                      >
+                        <time>{formatMissionTime(event.time)}</time>
+                        <div>
+                          <strong>{event.title}</strong>
+                          <span>{event.detail}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </>
+            )}
+          </aside>
+        </section>
+      )}
     </main>
+  );
+}
+
+function TrainingWorkspace({
+  policyBundle,
+  trainingEpisodes,
+  onTrainingEpisodesChange,
+  onTrain,
+  onRestore,
+  busy,
+}: {
+  policyBundle: PolicyBundle;
+  trainingEpisodes: number;
+  onTrainingEpisodesChange: (value: number) => void;
+  onTrain: () => void;
+  onRestore: () => void;
+  busy: boolean;
+}) {
+  const stats = policyBundle.stats;
+  return (
+    <section className="workspace-page training-page">
+      <div className="workspace-page-header">
+        <div>
+          <div className="workspace-kicker">
+            <BrainCircuit /> MODEL WORKBENCH
+          </div>
+          <h1>AI 학습</h1>
+          <p>
+            군집 전체의 배터리·거리·임무 중요도를 학습하고 새 경로 정책을
+            만듭니다.
+          </p>
+        </div>
+        <Badge className="workspace-status">
+          <span className="status-pulse" />
+          {busy ? '학습 중' : '모델 사용 가능'}
+        </Badge>
+      </div>
+
+      <div className="workspace-grid training-grid">
+        <div className="workspace-card training-main-card">
+          <div className="workspace-card-header">
+            <div>
+              <span className="workspace-label">현재 정책</span>
+              <h2>중앙집중형 다중 에이전트 DQN</h2>
+            </div>
+            <Badge variant="outline">
+              {policyBundle.origin === 'custom'
+                ? '사용자 재학습 모델'
+                : '기본 사전학습 모델'}
+            </Badge>
+          </div>
+          <div className="training-chart">
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+              minWidth={0}
+              minHeight={0}
+              initialDimension={{ width: 620, height: 250 }}
+            >
+              <AreaChart data={stats.rewardHistory}>
+                <defs>
+                  <linearGradient
+                    id="training-reward-fill"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#67e8f9" stopOpacity=".34" />
+                    <stop offset="100%" stopColor="#67e8f9" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#17303a" vertical={false} />
+                <XAxis
+                  dataKey="episode"
+                  tick={{ fill: '#6f8994', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: '#6f8994', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <ChartTooltip
+                  contentStyle={{
+                    background: '#09151b',
+                    border: '1px solid #24404b',
+                    fontSize: 12,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="reward"
+                  name="평균 보상"
+                  stroke="#67e8f9"
+                  fill="url(#training-reward-fill)"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="workspace-chart-caption">
+            <span>에피소드별 최근 평균 보상</span>
+            <strong>{stats.episodes.toLocaleString()}회 학습 완료</strong>
+          </div>
+        </div>
+
+        <div className="workspace-stack">
+          <div className="workspace-card">
+            <div className="workspace-card-header compact">
+              <span className="workspace-label">모델 상태</span>
+              <Bot className="text-cyan-300" size={20} />
+            </div>
+            <div className="workspace-metric-large">
+              <strong>{stats.averageReward.toFixed(1)}</strong>
+              <span>평균 보상</span>
+            </div>
+            <Progress
+              value={Math.min(100, 100 - stats.epsilon * 100)}
+              className="h-1.5 bg-white/10"
+            />
+            <div className="workspace-stat-list">
+              <div>
+                <span>TD 손실</span>
+                <strong>{stats.finalLoss.toFixed(3)}</strong>
+              </div>
+              <div>
+                <span>탐색률</span>
+                <strong>{(stats.epsilon * 100).toFixed(1)}%</strong>
+              </div>
+            </div>
+          </div>
+          <div className="workspace-card">
+            <span className="workspace-label">학습 상태 입력</span>
+            <div className="training-feature-grid">
+              <div>
+                <strong>13</strong>
+                <span>상태 변수</span>
+              </div>
+              <div>
+                <strong>2–6</strong>
+                <span>가상 기체</span>
+              </div>
+              <div>
+                <strong>10–24</strong>
+                <span>정찰지점</span>
+              </div>
+              <div>
+                <strong>24</strong>
+                <span>은닉 노드</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="workspace-card training-controls-card">
+        <div>
+          <span className="workspace-label">새 모델 만들기</span>
+          <h2>가상 임무를 반복해 정책을 다시 학습</h2>
+          <p>
+            학습이 끝나면 현재 임무의 경로를 새 모델 기준으로 다시 계산합니다.
+            결과는 이 브라우저에 저장됩니다.
+          </p>
+        </div>
+        <div className="training-action-row">
+          <Select
+            value={String(trainingEpisodes)}
+            onValueChange={(value) => onTrainingEpisodesChange(Number(value))}
+            disabled={busy}
+          >
+            <SelectTrigger className="training-episode-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1000">1,000회</SelectItem>
+              <SelectItem value="2000">2,000회</SelectItem>
+              <SelectItem value="5000">5,000회</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            className="primary-command training-action-button"
+            onClick={onTrain}
+            disabled={busy}
+          >
+            <Zap className={busy ? 'animate-pulse' : ''} />
+            {busy
+              ? '새 모델 학습 중'
+              : trainingEpisodes.toLocaleString() + '회 학습 시작'}
+          </Button>
+          <Button
+            variant="outline"
+            className="training-action-button"
+            onClick={onRestore}
+            disabled={busy || policyBundle.origin === 'pretrained'}
+          >
+            <RefreshCw /> 기본 모델 복원
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EvaluationWorkspace({
+  results,
+  onRun,
+  busy,
+  scenarioResults,
+  onCompare,
+  comparisonReady,
+  comparisonBusy,
+  missionTime,
+}: {
+  results: ReturnType<typeof runBatchEvaluation>;
+  onRun: () => void;
+  busy: boolean;
+  scenarioResults: ScenarioComparisonResult[] | null;
+  onCompare: () => void;
+  comparisonReady: boolean;
+  comparisonBusy: boolean;
+  missionTime: number;
+}) {
+  return (
+    <section className="workspace-page evaluation-page">
+      <div className="workspace-page-header">
+        <div>
+          <div className="workspace-kicker">
+            <FileChartColumn /> EVALUATION
+          </div>
+          <h1>성능 비교</h1>
+          <p>
+            같은 임무 조건에서 최근접·중요도·다중 에이전트 DQN의 결과를
+            비교합니다.
+          </p>
+        </div>
+        <Badge variant="outline" className="workspace-status">
+          임무 시각 {formatMissionTime(missionTime)}
+        </Badge>
+      </div>
+
+      <div className="evaluation-layout">
+        <ComparisonRail
+          results={results}
+          onRun={onRun}
+          busy={busy}
+          scenarioResults={scenarioResults}
+          onCompare={onCompare}
+          comparisonReady={comparisonReady}
+          comparisonBusy={comparisonBusy}
+        />
+        <div className="workspace-stack">
+          <div className="workspace-card">
+            <span className="workspace-label">평가 기준</span>
+            <div className="evaluation-method-list">
+              <div>
+                <strong>01</strong>
+                <span>같은 시나리오와 이탈 조건으로 실행</span>
+              </div>
+              <div>
+                <strong>02</strong>
+                <span>정찰 연속성·완료율·공백을 기록</span>
+              </div>
+              <div>
+                <strong>03</strong>
+                <span>현재 임무는 실험 종료 후 동일 조건 비교</span>
+              </div>
+            </div>
+          </div>
+          <div className="workspace-card evaluation-note">
+            <ShieldCheck className="text-cyan-300" />
+            <div>
+              <strong>비교 결과를 논문에 사용</strong>
+              <p>
+                세 방식의 조건, 반복 횟수, 측정 지표를 함께 기록해 AI 방식의
+                개선 효과를 확인할 수 있습니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

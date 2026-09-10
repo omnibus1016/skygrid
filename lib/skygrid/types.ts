@@ -1,4 +1,9 @@
-export type AppMode = 'field' | 'analysis' | 'simulation';
+export type AppMode =
+  | 'field'
+  | 'analysis'
+  | 'simulation'
+  | 'evaluation'
+  | 'training';
 export type PlannerKind = 'rl' | 'nearest' | 'priority';
 export type DroneStatus = 'ready' | 'active' | 'failed' | 'returning';
 
