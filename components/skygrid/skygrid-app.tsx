@@ -1519,7 +1519,7 @@ export default function SkygridApp() {
           </div>
           <div>
             <div className="brand-name">SKYGRID</div>
-            <div className="brand-sub">군집 무인기 정찰 임무통제체계</div>
+            <div className="brand-sub">군집 무인기 정찰 경로 최적화 플랫폼</div>
           </div>
         </div>
         <Tabs
@@ -1545,14 +1545,6 @@ export default function SkygridApp() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="header-national">
-          {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
-          <img
-            className="header-flag"
-            src="brand/korea-flag.svg"
-            alt="대한민국 국기"
-          />
-        </div>
       </header>
 
       {mode === 'training' ? (
@@ -1967,141 +1959,143 @@ export default function SkygridApp() {
           </aside>
 
           <section className="map-stage">
-            <div className="map-toolbar">
-              <div className="flex items-center gap-2">
-                {mode !== 'analysis' &&
-                  (mission.base.configured ||
-                    mission.drones.length > 0 ||
-                    mission.waypoints.length > 0) && (
-                    <Badge
-                      variant="outline"
-                      className={
-                        mission.failureTriggered
-                          ? 'event-badge danger'
-                          : 'event-badge'
-                      }
-                    >
-                      <CircleDot />{' '}
-                      {mission.failureTriggered
-                        ? '기체 이탈 · 재계획 완료'
-                        : mode === 'field'
-                          ? '운용자 상태 입력 대기'
-                          : missionReady
-                            ? `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`
-                            : '작전구역 편집 중'}
+            <div className="map-control-stack">
+              <div className="map-toolbar">
+                <div className="flex items-center gap-2">
+                  {mode !== 'analysis' &&
+                    (mission.base.configured ||
+                      mission.drones.length > 0 ||
+                      mission.waypoints.length > 0) && (
+                      <Badge
+                        variant="outline"
+                        className={
+                          mission.failureTriggered
+                            ? 'event-badge danger'
+                            : 'event-badge'
+                        }
+                      >
+                        <CircleDot />{' '}
+                        {mission.failureTriggered
+                          ? '기체 이탈 · 재계획 완료'
+                          : mode === 'field'
+                            ? '운용자 상태 입력 대기'
+                            : missionReady
+                              ? `자동 이탈 예정 ${formatMissionTime(config.failureAt)}`
+                              : '작전구역 편집 중'}
+                      </Badge>
+                    )}
+                  {mode === 'analysis' && (
+                    <Badge variant="outline" className="event-badge">
+                      <Database /> 비행기록 {logs.length}개 중첩
                     </Badge>
                   )}
-                {mode === 'analysis' && (
-                  <Badge variant="outline" className="event-badge">
-                    <Database /> 비행기록 {logs.length}개 중첩
-                  </Badge>
-                )}
-              </div>
-              <div className="map-toolbar-right">
-                <div className="layer-switch" aria-label="지도 배경 선택">
-                  <button
-                    type="button"
-                    className={mapBase === 'satellite' ? 'active' : ''}
-                    onClick={() => setMapBase('satellite')}
-                  >
-                    <Satellite /> 위성
-                  </button>
-                  <button
-                    type="button"
-                    className={mapBase === 'street' ? 'active' : ''}
-                    onClick={() => setMapBase('street')}
-                  >
-                    <MapIcon /> 지도
-                  </button>
+                </div>
+                <div className="map-toolbar-right">
+                  <div className="layer-switch" aria-label="지도 배경 선택">
+                    <button
+                      type="button"
+                      className={mapBase === 'satellite' ? 'active' : ''}
+                      onClick={() => setMapBase('satellite')}
+                    >
+                      <Satellite /> 위성
+                    </button>
+                    <button
+                      type="button"
+                      className={mapBase === 'street' ? 'active' : ''}
+                      onClick={() => setMapBase('street')}
+                    >
+                      <MapIcon /> 지도
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {mode !== 'analysis' && (
-              <div className="map-edit-toolbar">
-                <button
-                  type="button"
-                  className={`map-tool ${interaction === 'add-base' ? 'active' : ''}`}
-                  onClick={() =>
-                    setInteraction(
-                      interaction === 'add-base' ? 'inspect' : 'add-base',
-                    )
-                  }
-                >
-                  <Crosshair /> 기지 지정
-                </button>
-                <button
-                  type="button"
-                  className="map-tool"
-                  onClick={() => setDroneStatusOpen(true)}
-                >
-                  <List /> 기체 현황
-                </button>
-                <button
-                  type="button"
-                  className={`map-tool ${interaction === 'add-waypoint' ? 'active' : ''}`}
-                  onClick={() =>
-                    setInteraction(
-                      interaction === 'add-waypoint'
-                        ? 'inspect'
-                        : 'add-waypoint',
-                    )
-                  }
-                >
-                  <MapPinPlus /> 정찰지점 추가
-                </button>
-                <button
-                  type="button"
-                  className={`map-tool ${interaction === 'add-drone' ? 'active' : ''}`}
-                  onClick={() =>
-                    setInteraction(
-                      interaction === 'add-drone' ? 'inspect' : 'add-drone',
-                    )
-                  }
-                >
-                  <Satellite /> 기체 추가
-                </button>
-                <button
-                  type="button"
-                  className="map-tool danger"
-                  onClick={deleteSelectedMapEntity}
-                  disabled={!canDeleteSelectedEntity}
-                >
-                  <Trash2 /> {deleteTargetLabel} 삭제
-                </button>
-                <button
-                  type="button"
-                  className="map-tool"
-                  onClick={() => replanNow()}
-                >
-                  <BrainCircuit /> 경로 재계산
-                </button>
-                <button
-                  type="button"
-                  className={`map-tool ${interaction === 'move-drone' ? 'active' : ''}`}
-                  onClick={() =>
-                    setInteraction(
-                      interaction === 'move-drone' ? 'inspect' : 'move-drone',
-                    )
-                  }
-                  disabled={!selectedDrone}
-                >
-                  <LocateFixed /> {selectedDroneId || '기체'} 위치 지정
-                </button>
-                {interaction !== 'inspect' && (
-                  <span className="map-click-guide">
-                    <Crosshair />
-                    {interaction === 'move-drone'
-                      ? `${selectedDroneId}를 이동할 위치를 클릭하세요`
-                      : interaction === 'add-drone'
-                        ? '기체를 배치할 위치를 클릭하세요'
-                        : interaction === 'add-base'
-                          ? '기지를 배치할 위치를 클릭하세요'
-                          : '정찰지점을 등록할 위치를 클릭하세요'}
-                  </span>
-                )}
-              </div>
-            )}
+              {mode !== 'analysis' && (
+                <div className="map-edit-toolbar">
+                  <button
+                    type="button"
+                    className={`map-tool ${interaction === 'add-base' ? 'active' : ''}`}
+                    onClick={() =>
+                      setInteraction(
+                        interaction === 'add-base' ? 'inspect' : 'add-base',
+                      )
+                    }
+                  >
+                    <Crosshair /> 기지 지정
+                  </button>
+                  <button
+                    type="button"
+                    className="map-tool"
+                    onClick={() => setDroneStatusOpen(true)}
+                  >
+                    <List /> 기체 현황
+                  </button>
+                  <button
+                    type="button"
+                    className={`map-tool ${interaction === 'add-waypoint' ? 'active' : ''}`}
+                    onClick={() =>
+                      setInteraction(
+                        interaction === 'add-waypoint'
+                          ? 'inspect'
+                          : 'add-waypoint',
+                      )
+                    }
+                  >
+                    <MapPinPlus /> 정찰지점 추가
+                  </button>
+                  <button
+                    type="button"
+                    className={`map-tool ${interaction === 'add-drone' ? 'active' : ''}`}
+                    onClick={() =>
+                      setInteraction(
+                        interaction === 'add-drone' ? 'inspect' : 'add-drone',
+                      )
+                    }
+                  >
+                    <Satellite /> 기체 추가
+                  </button>
+                  <button
+                    type="button"
+                    className="map-tool danger"
+                    onClick={deleteSelectedMapEntity}
+                    disabled={!canDeleteSelectedEntity}
+                  >
+                    <Trash2 /> {deleteTargetLabel} 삭제
+                  </button>
+                  <button
+                    type="button"
+                    className="map-tool"
+                    onClick={() => replanNow()}
+                  >
+                    <BrainCircuit /> 경로 재계산
+                  </button>
+                  <button
+                    type="button"
+                    className={`map-tool ${interaction === 'move-drone' ? 'active' : ''}`}
+                    onClick={() =>
+                      setInteraction(
+                        interaction === 'move-drone' ? 'inspect' : 'move-drone',
+                      )
+                    }
+                    disabled={!selectedDrone}
+                  >
+                    <LocateFixed /> {selectedDroneId || '기체'} 위치 지정
+                  </button>
+                  {interaction !== 'inspect' && (
+                    <span className="map-click-guide">
+                      <Crosshair />
+                      {interaction === 'move-drone'
+                        ? `${selectedDroneId}를 이동할 위치를 클릭하세요`
+                        : interaction === 'add-drone'
+                          ? '기체를 배치할 위치를 클릭하세요'
+                          : interaction === 'add-base'
+                            ? '기지를 배치할 위치를 클릭하세요'
+                            : '정찰지점을 등록할 위치를 클릭하세요'}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
             <OperationalMap
               mode={mode}
@@ -2711,18 +2705,6 @@ function TrainingWorkspace({
               initialDimension={{ width: 620, height: 250 }}
             >
               <AreaChart data={stats.rewardHistory}>
-                <defs>
-                  <linearGradient
-                    id="training-reward-fill"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="0%" stopColor="#67e8f9" stopOpacity=".34" />
-                    <stop offset="100%" stopColor="#67e8f9" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid stroke="#17303a" vertical={false} />
                 <XAxis
                   dataKey="episode"
@@ -2747,7 +2729,8 @@ function TrainingWorkspace({
                   dataKey="reward"
                   name="평균 보상"
                   stroke="#67e8f9"
-                  fill="url(#training-reward-fill)"
+                  fill="#163742"
+                  fillOpacity={0.55}
                   strokeWidth={2}
                   dot={false}
                 />

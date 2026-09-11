@@ -2,9 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SKYGRID | 군집 무인기 정찰 임무통제체계',
-  description:
-    '강화학습 기반 군집 무인기 정찰 임무계획·시뮬레이션·비행 검증 체계',
+  title: 'SKYGRID | 군집 무인기 정찰 경로 최적화 플랫폼',
+  description: '군집 무인기 정찰 경로 최적화·가상 실험·비행 데이터 검증 플랫폼',
 };
 
 export default function RootLayout({

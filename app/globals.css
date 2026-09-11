@@ -172,18 +172,10 @@ button {
   padding-right: 12px;
   border-right: 1px solid #425057;
 }
-.header-flag {
-  width: 38px;
-  height: 25px;
-  object-fit: cover;
-  border: 1px solid #b8c1c566;
-  box-shadow: 0 2px 8px #0008;
-}
 .header-rokaf {
   width: 48px;
   height: 48px;
   object-fit: contain;
-  filter: drop-shadow(0 2px 4px #0008);
 }
 .brand-name {
   font: 700 20px/1 var(--font-geist-mono);
@@ -228,16 +220,6 @@ button {
   object-fit: contain;
   filter: brightness(1.7) saturate(0.7);
   opacity: 0.86;
-}
-.header-national {
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-left: 15px;
-  border-left: 1px solid #425057;
-  position: relative;
-  z-index: 1;
 }
 .mission-shell {
   height: calc(100vh - 76px);
@@ -1276,7 +1258,7 @@ button {
     grid-template-columns: 240px minmax(600px, 1fr) 300px;
   }
   .mission-header {
-    grid-template-columns: 340px minmax(540px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     padding-inline: 14px;
   }
   .mission-tab {
@@ -2084,4 +2066,106 @@ button {
     max-height: min(58vh, 520px);
     overflow-y: auto;
   }
+}
+
+/* Flat operational presentation: state is shown with borders and color only. */
+main *,
+main *::before,
+main *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+}
+main :focus-visible {
+  outline: 2px solid #91a6ae;
+  outline-offset: 2px;
+}
+body {
+  background: var(--background);
+}
+.mission-header {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  background: #071116;
+}
+.mission-header::before,
+.mission-header::after,
+.map-stage::after,
+.rail-section::after,
+.section-heading > span:first-child::before,
+.uav-pulse {
+  display: none;
+}
+.brand-lockup {
+  justify-self: start;
+}
+.mission-header > [data-slot='tabs'] {
+  justify-self: center;
+}
+.mission-tab:hover {
+  background: #101d23;
+}
+.mission-tab[data-active] {
+  border-bottom: 3px solid #a98f55;
+  background: #101d23;
+}
+.workspace-page {
+  background: #050d12;
+}
+.workspace-card,
+.left-rail,
+.right-rail,
+.rail-section,
+.dropout-control,
+.map-footer,
+.map-loading {
+  background: #071116;
+}
+.workspace-card,
+.rail-section,
+.map-context-menu,
+.drone-profile-dialog,
+.drone-status-dialog {
+  clip-path: none;
+}
+.primary-command,
+.primary-command:hover {
+  background: #35677a;
+}
+.layer-switch,
+.map-tool,
+.map-context-menu,
+.event-badge,
+.map-footer {
+  backdrop-filter: none;
+}
+.map-control-stack {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  left: 15px;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  pointer-events: none;
+}
+.map-control-stack > * {
+  pointer-events: auto;
+}
+.map-toolbar {
+  position: static;
+  order: 2;
+}
+.map-edit-toolbar {
+  position: static;
+  order: 1;
+  max-width: none;
+}
+.map-tool.active,
+.layer-switch button.active {
+  border-color: #9b8655;
+  background: #282318;
+}
+.uav-map-marker.is-selected .uav-body {
+  border-width: 2px;
 }
