@@ -358,11 +358,6 @@ export default function SkygridApp() {
     mission.base.configured &&
     mission.drones.length > 0 &&
     mission.waypoints.length > 0;
-  const missingMissionInputs = [
-    !mission.base.configured ? '기지' : '',
-    !mission.drones.length ? '기체' : '',
-    !mission.waypoints.length ? '정찰지점' : '',
-  ].filter(Boolean);
   const activeDropoutDroneId = mission.drones.some(
     (drone) => drone.id === dropoutDroneId && drone.status !== 'failed',
   )
@@ -1474,7 +1469,7 @@ export default function SkygridApp() {
       />
       <header className="mission-header">
         <div className="brand-lockup">
-          <div className="brand-insignia" aria-label="대한민국 공군">
+          <div className="brand-insignia" aria-label="대한민국 공군과 KAIST">
             {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
             <img
               className="header-flag"
@@ -1486,6 +1481,12 @@ export default function SkygridApp() {
               className="header-rokaf"
               src="brand/rokaf-emblem.png"
               alt="대한민국 공군 표장"
+            />
+            {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
+            <img
+              className="header-kaist"
+              src="brand/kaist-wordmark.png"
+              alt="KAIST"
             />
           </div>
           <div>
@@ -1516,19 +1517,6 @@ export default function SkygridApp() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="header-status">
-          {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
-          <img
-            className="header-kaist"
-            src="brand/kaist-wordmark.png"
-            alt="KAIST"
-          />
-          <span className="header-divider" aria-hidden="true" />
-          <Badge className="system-badge">
-            <span className="status-pulse" />{' '}
-            {mission.running ? '임무 진행 중' : '대기'}
-          </Badge>
-        </div>
       </header>
 
       {mode === 'training' ? (
@@ -1593,7 +1581,7 @@ export default function SkygridApp() {
                       size="icon"
                       onClick={clearScenario}
                       aria-label="작전지도 비우기"
-                      title="기지·기체·정찰지점을 모두 지움"
+                      title="작전지도 초기화"
                     >
                       <RefreshCw />
                     </Button>
@@ -1608,11 +1596,6 @@ export default function SkygridApp() {
                   >
                     <StepForward /> 10초 단위 진행
                   </Button>
-                  {!missionReady && (
-                    <output className="empty-inline">
-                      {missingMissionInputs.join('·')} 필요
-                    </output>
-                  )}
                 </div>
 
                 <DropoutControl
@@ -1945,9 +1928,6 @@ export default function SkygridApp() {
           <section className="map-stage">
             <div className="map-toolbar">
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="map-badge">
-                  <MapIcon /> 한반도 작전지도 / WGS84
-                </Badge>
                 {mode !== 'analysis' &&
                   (mission.base.configured ||
                     mission.drones.length > 0 ||
@@ -1992,14 +1972,6 @@ export default function SkygridApp() {
                   >
                     <MapIcon /> 지도
                   </button>
-                </div>
-                <div className="map-mode-label">
-                  <span className="status-pulse" />
-                  {mode === 'field'
-                    ? '현장 입력'
-                    : mode === 'analysis'
-                      ? '로그 재생'
-                      : '가상 실험'}
                 </div>
               </div>
             </div>

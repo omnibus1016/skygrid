@@ -114,7 +114,7 @@ button {
 .mission-header {
   height: 76px;
   display: grid;
-  grid-template-columns: minmax(320px, 0.72fr) minmax(540px, 1.35fr) auto;
+  grid-template-columns: minmax(390px, 0.9fr) minmax(540px, 1.1fr);
   align-items: center;
   border-bottom: 1px solid #35464c;
   background:
@@ -219,25 +219,15 @@ button {
   background: linear-gradient(180deg, transparent, #3c6d7d2e);
   box-shadow: inset 0 -3px #d4ae50;
 }
-.header-status {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
+.mission-header > [data-slot='tabs'] {
+  justify-self: end;
 }
 .header-kaist {
-  width: 86px;
+  width: 72px;
   height: 28px;
   object-fit: contain;
   filter: brightness(1.7) saturate(0.7);
   opacity: 0.86;
-}
-.header-divider {
-  width: 1px;
-  height: 28px;
-  background: #3b4c53;
 }
 .mission-shell {
   height: calc(100vh - 76px);
@@ -1272,11 +1262,8 @@ button {
     grid-template-columns: 240px minmax(600px, 1fr) 300px;
   }
   .mission-header {
-    grid-template-columns: 300px minmax(540px, 1fr) auto;
+    grid-template-columns: 380px minmax(540px, 1fr);
     padding-inline: 14px;
-  }
-  .header-kaist {
-    width: 72px;
   }
   .mission-tab {
     min-width: 104px;
@@ -1284,15 +1271,6 @@ button {
   }
 }
 
-.system-badge {
-  min-width: 82px;
-  justify-content: center;
-  border: 1px solid #66808b70;
-  border-radius: 2px;
-  background: #13232b;
-  color: #cbd8dd;
-  box-shadow: inset 0 -2px #4f8497;
-}
 .status-pulse {
   width: 7px;
   height: 7px;
@@ -1732,7 +1710,6 @@ button {
 .danger-tooltip {
   color: #ff9c92 !important;
 }
-.map-badge,
 .event-badge {
   height: 28px;
   border-color: #2b424c;
@@ -1750,21 +1727,6 @@ button {
   background: #271212e8;
   color: #ff9d92;
 }
-.map-mode-label {
-  height: 28px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #2b424c;
-  border-radius: 3px;
-  background: #071319e8;
-  color: #a9c0c9;
-  padding: 0 10px;
-  font: 600 11px var(--font-geist-mono);
-  letter-spacing: 0.06em;
-  backdrop-filter: blur(10px);
-}
-
 .metric-card {
   min-height: 75px;
   display: grid;
