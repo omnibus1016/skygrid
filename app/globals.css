@@ -2156,10 +2156,19 @@ body {
   position: static;
   order: 2;
 }
+.map-toolbar-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.layer-switch {
+  height: 30px;
+}
 .map-edit-toolbar {
   position: static;
   order: 1;
   max-width: none;
+  padding-right: 126px;
 }
 .map-tool.active,
 .layer-switch button.active {
