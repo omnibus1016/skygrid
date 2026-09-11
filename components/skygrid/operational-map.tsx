@@ -190,7 +190,7 @@ export default function OperationalMap({
     <MapContainer
       center={[36.25, 127.8]}
       zoom={7}
-      zoomControl
+      zoomControl={false}
       attributionControl
       className={`tactical-map map-base-${mapBase} interaction-${interaction}`}
     >

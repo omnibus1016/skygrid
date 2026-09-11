@@ -114,7 +114,7 @@ button {
 .mission-header {
   height: 76px;
   display: grid;
-  grid-template-columns: minmax(390px, 0.9fr) minmax(540px, 1.1fr);
+  grid-template-columns: minmax(340px, 0.8fr) minmax(540px, 1.2fr) auto;
   align-items: center;
   border-bottom: 1px solid #35464c;
   background:
@@ -220,7 +220,7 @@ button {
   box-shadow: inset 0 -3px #d4ae50;
 }
 .mission-header > [data-slot='tabs'] {
-  justify-self: end;
+  justify-self: center;
 }
 .header-kaist {
   width: 72px;
@@ -228,6 +228,16 @@ button {
   object-fit: contain;
   filter: brightness(1.7) saturate(0.7);
   opacity: 0.86;
+}
+.header-national {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-left: 15px;
+  border-left: 1px solid #425057;
+  position: relative;
+  z-index: 1;
 }
 .mission-shell {
   height: calc(100vh - 76px);
@@ -1262,7 +1272,7 @@ button {
     grid-template-columns: 240px minmax(600px, 1fr) 300px;
   }
   .mission-header {
-    grid-template-columns: 380px minmax(540px, 1fr);
+    grid-template-columns: 340px minmax(540px, 1fr) auto;
     padding-inline: 14px;
   }
   .mission-tab {
@@ -1548,16 +1558,6 @@ button {
 .map-base-street .leaflet-tile-pane {
   filter: invert(1) hue-rotate(178deg) brightness(0.48) contrast(1.18)
     saturate(0.42);
-}
-.leaflet-control-zoom {
-  border: 1px solid #27404a !important;
-  border-radius: 3px !important;
-  box-shadow: none !important;
-}
-.leaflet-control-zoom a {
-  background: #071319e8 !important;
-  color: #a6bec7 !important;
-  border-color: #27404a !important;
 }
 .leaflet-control-attribution {
   background: #071319bf !important;

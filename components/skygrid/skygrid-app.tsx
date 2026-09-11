@@ -1472,12 +1472,6 @@ export default function SkygridApp() {
           <div className="brand-insignia" aria-label="대한민국 공군과 KAIST">
             {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
             <img
-              className="header-flag"
-              src="brand/korea-flag.svg"
-              alt="대한민국 국기"
-            />
-            {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
-            <img
               className="header-rokaf"
               src="brand/rokaf-emblem.png"
               alt="대한민국 공군 표장"
@@ -1517,6 +1511,14 @@ export default function SkygridApp() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+        <div className="header-national">
+          {/* oxlint-disable-next-line next/no-img-element -- relative public path supports both localhost and GitHub Pages */}
+          <img
+            className="header-flag"
+            src="brand/korea-flag.svg"
+            alt="대한민국 국기"
+          />
+        </div>
       </header>
 
       {mode === 'training' ? (
