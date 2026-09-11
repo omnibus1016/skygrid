@@ -152,7 +152,7 @@ const EVALUATION_CONFIG: ScenarioConfig = {
 };
 
 const PLANNER_LABEL: Record<PlannerKind, string> = {
-  rl: '다중 에이전트 DQN',
+  rl: '물리 제약 결합 DQN',
   nearest: '최근접 우선',
   priority: '중요도 우선',
 };
@@ -173,7 +173,7 @@ type PolicyBundle = {
   trainedAt: string | null;
 };
 
-const POLICY_STORAGE_KEY = 'skygrid-policy-v1';
+const POLICY_STORAGE_KEY = 'skygrid-policy-v2';
 
 function createPretrainedPolicyBundle(): PolicyBundle {
   const policy = CandidateDqn.fromWeights(PRETRAINED_POLICY_WEIGHTS);
@@ -312,8 +312,10 @@ export default function SkygridApp() {
   const [busyAction, setBusyAction] = useState<
     'train' | 'batch' | 'compare' | null
   >(null);
-  const [trainingEpisodes, setTrainingEpisodes] = useState(1_000);
+  const [trainingEpisodes, setTrainingEpisodes] = useState(5_000);
   const [trainingProgress, setTrainingProgress] = useState(0);
+  const [trainingStage, setTrainingStage] = useState('');
+  const [trainingNotice, setTrainingNotice] = useState('');
   const [dropoutDroneId, setDropoutDroneId] = useState('UAV-02');
   const [dropoutReason, setDropoutReason] = useState('통신 두절');
   const [mapBase, setMapBase] = useState<'satellite' | 'street'>('satellite');
@@ -1187,18 +1189,41 @@ export default function SkygridApp() {
   const trainAgain = useCallback(() => {
     setBusyAction('train');
     setTrainingProgress(0);
+    setTrainingStage('학습 환경 생성');
+    setTrainingNotice('');
     window.setTimeout(() => {
       void (async () => {
         try {
+          const trainingContext = {
+            base: { lat: mission.base.lat, lng: mission.base.lng },
+            drones: mission.drones,
+            waypoints: mission.waypoints,
+            missionTime: mission.time,
+            durationSec: config.durationSec,
+            failureAt: config.failureAt,
+          };
           const next = await trainDqnPolicyAsync(
             trainingEpisodes,
             config.randomSeed + policyStats.episodes,
             (progress) => {
+              setTrainingStage(
+                progress.stage === 'validation'
+                  ? '미사용 시나리오 검증'
+                  : '가중치 학습',
+              );
               setTrainingProgress(
                 Math.round((progress.episode / progress.totalEpisodes) * 100),
               );
             },
+            trainingContext,
           );
+          const validation = next.stats.validation;
+          if (!validation?.passed) {
+            setTrainingNotice(
+              `검증 점수 ${validation?.rlScore.toFixed(1) ?? '-'} · 기준 성능을 넘지 못해 현재 모델 유지`,
+            );
+            return;
+          }
           const nextBundle: PolicyBundle = {
             ...next,
             origin: 'custom',
@@ -1207,6 +1232,10 @@ export default function SkygridApp() {
           savePolicyBundle(nextBundle);
           setPolicyBundle(nextBundle);
           setTrainingProgress(100);
+          setTrainingStage('검증 통과');
+          setTrainingNotice(
+            `검증 ${validation.scenarios}개 · 기준 대비 +${validation.improvementVsBest.toFixed(1)}점 · 새 모델 적용`,
+          );
           setMission((current) => {
             const planned = assignRoutes(
               current.drones,
@@ -1236,6 +1265,8 @@ export default function SkygridApp() {
           });
         } catch {
           setTrainingProgress(0);
+          setTrainingStage('');
+          setTrainingNotice('학습을 완료하지 못했습니다. 다시 실행해 주세요.');
         } finally {
           setBusyAction(null);
         }
@@ -1244,6 +1275,9 @@ export default function SkygridApp() {
   }, [
     config.planner,
     config.randomSeed,
+    config.durationSec,
+    config.failureAt,
+    mission,
     policyStats.episodes,
     trainingEpisodes,
   ]);
@@ -1526,6 +1560,11 @@ export default function SkygridApp() {
           policyBundle={policyBundle}
           trainingEpisodes={trainingEpisodes}
           trainingProgress={trainingProgress}
+          trainingStage={trainingStage}
+          trainingNotice={trainingNotice}
+          currentSetupReady={
+            mission.drones.length >= 2 && mission.waypoints.length >= 3
+          }
           onTrainingEpisodesChange={setTrainingEpisodes}
           onTrain={trainAgain}
           onRestore={restoreDefaultPolicy}
@@ -1705,7 +1744,7 @@ export default function SkygridApp() {
                       <SelectValue>{PLANNER_LABEL[config.planner]}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="rl">다중 에이전트 DQN</SelectItem>
+                      <SelectItem value="rl">물리 제약 결합 DQN</SelectItem>
                       <SelectItem value="nearest">최근접 우선</SelectItem>
                       <SelectItem value="priority">중요도 우선</SelectItem>
                     </SelectContent>
@@ -2501,7 +2540,7 @@ export default function SkygridApp() {
                       <BrainCircuit size={19} />
                     </span>
                     <div>
-                      <strong>다중 에이전트 DQN</strong>
+                      <strong>물리 제약 결합 DQN</strong>
                       <span>
                         {policyBundle.origin === 'pretrained'
                           ? '기본 사전학습 모델'
@@ -2612,6 +2651,9 @@ function TrainingWorkspace({
   policyBundle,
   trainingEpisodes,
   trainingProgress,
+  trainingStage,
+  trainingNotice,
+  currentSetupReady,
   onTrainingEpisodesChange,
   onTrain,
   onRestore,
@@ -2620,6 +2662,9 @@ function TrainingWorkspace({
   policyBundle: PolicyBundle;
   trainingEpisodes: number;
   trainingProgress: number;
+  trainingStage: string;
+  trainingNotice: string;
+  currentSetupReady: boolean;
   onTrainingEpisodesChange: (value: number) => void;
   onTrain: () => void;
   onRestore: () => void;
@@ -2634,7 +2679,11 @@ function TrainingWorkspace({
             <BrainCircuit /> 모델 관리
           </div>
           <h1>AI 학습</h1>
-          <p>경로 정책 학습 · 1회 기준: 정찰지점 배정 완료까지</p>
+          <p>
+            {currentSetupReady
+              ? '현재 가상실험 구성 반영'
+              : 'DJI 기체 프로파일 일반화 학습'}
+          </p>
         </div>
         <Badge className={`workspace-status ${busy ? 'is-training' : ''}`}>
           <span className="status-pulse" />
@@ -2647,7 +2696,7 @@ function TrainingWorkspace({
           <div className="workspace-card-header">
             <div>
               <span className="workspace-label">현재 정책</span>
-              <h2>중앙집중형 다중 에이전트 DQN</h2>
+              <h2>중앙집중형 물리 제약 결합 DQN</h2>
             </div>
             <Badge variant="outline">
               {policyBundle.origin === 'custom' ? '사용자 모델' : '기본 모델'}
@@ -2734,25 +2783,40 @@ function TrainingWorkspace({
                 <span>탐색률</span>
                 <strong>{(stats.epsilon * 100).toFixed(1)}%</strong>
               </div>
+              {stats.validation && (
+                <>
+                  <div>
+                    <span>검증 점수</span>
+                    <strong>{stats.validation.rlScore.toFixed(1)}</strong>
+                  </div>
+                  <div>
+                    <span>기준 대비</span>
+                    <strong>
+                      {stats.validation.improvementVsBest >= 0 ? '+' : ''}
+                      {stats.validation.improvementVsBest.toFixed(1)}
+                    </strong>
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <div className="workspace-card">
             <span className="workspace-label">모델 구성</span>
             <div className="training-feature-grid">
               <div>
-                <strong>13</strong>
+                <strong>16</strong>
                 <span>상태 변수</span>
               </div>
               <div>
-                <strong>2–6</strong>
-                <span>가상 기체</span>
+                <strong>1–6</strong>
+                <span>이탈 후 잔여 기체</span>
               </div>
               <div>
-                <strong>10–24</strong>
+                <strong>6–20</strong>
                 <span>정찰지점</span>
               </div>
               <div>
-                <strong>24</strong>
+                <strong>36</strong>
                 <span>은닉 노드</span>
               </div>
             </div>
@@ -2764,14 +2828,21 @@ function TrainingWorkspace({
         <div>
           <span className="workspace-label">재학습</span>
           <h2>학습 횟수 선택</h2>
-          <p>완료 후 현재 경로에 적용 · 이 브라우저에 저장</p>
+          <p>
+            {currentSetupReady
+              ? '현재 구성 변형 70% · 일반화 시나리오 30%'
+              : 'DJI 5개 기체 프로파일 · 무작위 기지·정찰지점'}
+          </p>
           <div className="training-progress-wrap">
             <div>
-              <span>학습 진행률</span>
+              <span>{trainingStage || '학습 진행률'}</span>
               <strong>{trainingProgress}%</strong>
             </div>
             <Progress value={trainingProgress} className="h-1.5 bg-white/10" />
           </div>
+          {trainingNotice && (
+            <p className="training-notice">{trainingNotice}</p>
+          )}
         </div>
         <div className="training-action-row">
           <Select
@@ -2786,6 +2857,7 @@ function TrainingWorkspace({
               <SelectItem value="1000">1,000회</SelectItem>
               <SelectItem value="2000">2,000회</SelectItem>
               <SelectItem value="5000">5,000회</SelectItem>
+              <SelectItem value="10000">10,000회</SelectItem>
             </SelectContent>
           </Select>
           <Button

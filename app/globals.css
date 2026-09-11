@@ -532,6 +532,10 @@ button {
   font-family: var(--font-geist-mono);
   font-weight: 500;
 }
+.training-controls-card .training-notice {
+  color: #b8eaf1;
+  font-weight: 500;
+}
 .training-action-row {
   display: flex;
   align-items: center;

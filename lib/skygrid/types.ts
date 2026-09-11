@@ -140,6 +140,16 @@ export interface PolicyStats {
   finalLoss: number;
   epsilon: number;
   rewardHistory: { episode: number; reward: number }[];
+  modelVersion?: number;
+  trainingScope?: string;
+  validation?: {
+    scenarios: number;
+    rlScore: number;
+    nearestScore: number;
+    priorityScore: number;
+    improvementVsBest: number;
+    passed: boolean;
+  };
 }
 
 export interface FlightLogPoint extends GeoPoint {

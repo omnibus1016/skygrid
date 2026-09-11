@@ -748,58 +748,6 @@ export function missionMetrics(state: MissionState): MissionMetrics {
   };
 }
 
-function scoreAssignedPlan(
-  drones: Drone[],
-  waypoints: Waypoint[],
-): Omit<BatchResult, 'planner' | 'label'> {
-  let weightedGap = 0;
-  let distanceM = 0;
-  let completed = 0;
-  for (const drone of drones.filter(
-    (item) => item.status === 'active' || item.status === 'ready',
-  )) {
-    let position = { lat: drone.lat, lng: drone.lng };
-    let elapsed = 0;
-    let battery = drone.battery;
-    for (const waypointId of drone.route) {
-      const waypoint = waypoints.find((item) => item.id === waypointId);
-      if (!waypoint) continue;
-      const segment = haversineMeters(position, waypoint);
-      const transitUse = (segment / 1000) * drone.consumptionPerKm;
-      const dwellUse = (waypoint.dwellSec / 60) * drone.loiterConsumptionPerMin;
-      const homeUse =
-        (haversineMeters(waypoint, {
-          lat: drone.homeLat,
-          lng: drone.homeLng,
-        }) /
-          1000) *
-        drone.consumptionPerKm;
-      if (battery - transitUse - dwellUse - homeUse < drone.reserveBattery)
-        break;
-      elapsed += segment / drone.speedMps + waypoint.dwellSec;
-      weightedGap +=
-        Math.max(0, elapsed - waypoint.revisitSec) * waypoint.priority;
-      distanceM += segment;
-      battery -= transitUse + dwellUse;
-      completed += 1;
-      position = waypoint;
-    }
-  }
-  const completion = waypoints.length
-    ? (completed / waypoints.length) * 100
-    : 0;
-  const continuity = Math.max(
-    0,
-    100 -
-      weightedGap /
-        Math.max(
-          1,
-          waypoints.reduce((sum, waypoint) => sum + waypoint.priority, 0) * 5,
-        ),
-  );
-  return { continuity, weightedGap, distance: distanceM / 1000, completion };
-}
-
 export function runBatchEvaluation(
   config: ScenarioConfig,
   policy: CandidateDqn,
@@ -808,7 +756,7 @@ export function runBatchEvaluation(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '다중 에이전트 DQN' },
+    { kind: 'rl', label: '물리 제약 결합 DQN' },
   ];
   return planners.map(({ kind, label }) => {
     const totals = {
@@ -818,27 +766,27 @@ export function runBatchEvaluation(
       completion: 0,
     };
     for (let run = 0; run < runs; run += 1) {
-      const mission = createMission(
-        { ...config, planner: kind, randomSeed: config.randomSeed + run * 17 },
-        policy,
-      );
-      const failedDrones = mission.drones.map((drone) =>
-        drone.id === config.failureDroneId
-          ? { ...drone, status: 'failed' as const }
-          : drone,
-      );
-      const planned = assignRoutes(
-        failedDrones,
-        mission.waypoints,
-        config.failureAt,
-        kind,
-        policy,
-      );
-      const result = scoreAssignedPlan(planned.drones, planned.waypoints);
-      totals.continuity += result.continuity;
-      totals.weightedGap += result.weightedGap;
-      totals.distance += result.distance;
-      totals.completion += result.completion;
+      const runConfig = {
+        ...config,
+        planner: kind,
+        randomSeed: config.randomSeed + run * 17,
+      };
+      let mission = createMission(runConfig, policy);
+      mission = { ...mission, running: true };
+      while (mission.running && !mission.completed) {
+        mission = advanceMission(
+          mission,
+          Math.min(5, runConfig.durationSec - mission.time),
+          runConfig,
+          policy,
+        );
+      }
+      const result = missionMetrics(mission);
+      totals.continuity +=
+        result.postFailureAverageContinuity ?? result.averageContinuity;
+      totals.weightedGap += result.weightedGapSeconds;
+      totals.distance += result.totalDistanceKm;
+      totals.completion += result.coverage;
     }
     return {
       planner: kind,
@@ -878,7 +826,7 @@ export function runScenarioComparison(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '다중 에이전트 DQN' },
+    { kind: 'rl', label: '물리 제약 결합 DQN' },
   ];
   const validFailureDroneId =
     initialState.drones.find((drone) => drone.id === config.failureDroneId)
