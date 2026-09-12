@@ -56,8 +56,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --font-sans: 'ROKAF Sans';
-  --font-mono: 'ROKAF Sans';
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-data);
   --radius-sm: 0.2rem;
   --radius-md: 0.28rem;
   --radius-lg: 0.38rem;
@@ -66,28 +66,30 @@
 
 :root {
   color-scheme: dark;
-  --font-geist-sans:
-    'ROKAF Sans', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
-  --font-geist-mono:
-    'ROKAF Sans', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
-  --background: #03080d;
-  --foreground: #d8e2e7;
-  --card: #08131a;
-  --card-foreground: #d8e2e7;
-  --popover: #08131a;
-  --popover-foreground: #d8e2e7;
-  --primary: #5cb3d4;
-  --primary-foreground: #f5fbfd;
-  --secondary: #111f27;
-  --secondary-foreground: #d8e2e7;
-  --muted: #101c23;
-  --muted-foreground: #81939c;
-  --accent: #172b35;
-  --accent-foreground: #e5f1f4;
-  --destructive: #e46f64;
-  --border: #253943;
-  --input: #253943;
-  --ring: #d2ae55;
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR',
+    'Apple SD Gothic Neo', sans-serif;
+  --font-data: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --font-geist-sans: var(--font-ui);
+  --font-geist-mono: var(--font-data);
+  --background: #091014;
+  --foreground: #d8dfe3;
+  --card: #10181d;
+  --card-foreground: #d8dfe3;
+  --popover: #10181d;
+  --popover-foreground: #d8dfe3;
+  --primary: #7894a1;
+  --primary-foreground: #f4f7f8;
+  --secondary: #151e23;
+  --secondary-foreground: #d8dfe3;
+  --muted: #141d22;
+  --muted-foreground: #8b989f;
+  --accent: #1a272e;
+  --accent-foreground: #edf1f3;
+  --destructive: #bb5f5b;
+  --border: #2c373d;
+  --input: #344149;
+  --ring: #7894a1;
 }
 
 * {
@@ -105,7 +107,7 @@ body {
     linear-gradient(90deg, #13242b26 1px, transparent 1px), var(--background);
   background-size: 32px 32px;
   color: var(--foreground);
-  font-family: 'ROKAF Sans', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+  font-family: var(--font-ui);
 }
 button {
   cursor: pointer;
@@ -2177,4 +2179,452 @@ body {
 }
 .uav-map-marker.is-selected .uav-body {
   border-width: 2px;
+}
+
+/* Operational UI: compact hierarchy, neutral controls, data-first panels. */
+body {
+  background: #091014;
+  color: #d8dfe3;
+}
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+}
+.mission-header {
+  height: 60px;
+  grid-template-columns: minmax(320px, 1fr) auto minmax(320px, 1fr);
+  padding: 0 16px;
+  border-bottom-color: #334047;
+  background: #0c1317;
+}
+.brand-lockup {
+  gap: 11px;
+}
+.brand-insignia {
+  height: 38px;
+  gap: 8px;
+  padding-right: 11px;
+  border-right-color: #344047;
+}
+.header-rokaf {
+  width: 36px;
+  height: 36px;
+}
+.header-kaist {
+  width: 60px;
+  height: 24px;
+  opacity: 0.78;
+}
+.brand-name {
+  font-family: 'ROKAF Sans', var(--font-ui);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+.brand-sub {
+  margin-top: 5px;
+  color: #8d999f;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.mission-header [data-slot='tabs-list'] {
+  height: 60px;
+  gap: 0;
+  background: transparent;
+}
+.mission-tab {
+  height: 60px;
+  min-width: 100px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: #8f9ba1;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+}
+.mission-tab + .mission-tab {
+  border-left: 1px solid #222d32;
+}
+.mission-tab:hover {
+  color: #d7dde0;
+  background: #111a1f;
+}
+.mission-tab[data-active] {
+  border-bottom-color: #849ba6;
+  color: #edf1f3;
+  background: #141d22;
+}
+.mission-shell {
+  height: calc(100vh - 60px);
+  grid-template-columns: 270px minmax(610px, 1fr) 320px;
+}
+.left-rail,
+.right-rail {
+  gap: 0;
+  padding: 0;
+  background: #0c1317;
+  scrollbar-gutter: stable;
+}
+.left-rail {
+  border-right-color: #344047;
+}
+.right-rail {
+  border-left-color: #344047;
+}
+.rail-section,
+.dropout-control {
+  padding: 15px 16px;
+  border: 0;
+  border-bottom: 1px solid #2a353b;
+  background: transparent;
+}
+.section-heading {
+  min-height: 22px;
+  margin-bottom: 13px;
+  padding: 0 0 9px;
+  border-bottom-color: #344047;
+  color: #c7ced2;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+.section-heading > span:last-child {
+  color: #8c989e;
+  font-family: var(--font-data);
+  font-size: 12px;
+  font-weight: 500;
+}
+.left-rail button,
+.left-rail select,
+.right-rail button,
+.right-rail select {
+  font-size: 14px;
+}
+.primary-command,
+.primary-command:hover {
+  height: 38px;
+  border-color: #617782;
+  background: #526873;
+  font-weight: 600;
+}
+.icon-command {
+  width: 38px;
+  height: 38px;
+  border-color: #36444b;
+  background: #11191e;
+}
+.button-pair {
+  grid-template-columns: 1fr 38px;
+  gap: 6px;
+}
+.parameter-row {
+  padding: 7px 0 9px;
+}
+.parameter-row > div:first-child {
+  margin-bottom: 8px;
+}
+.parameter-label,
+.control-label {
+  color: #a2adb2;
+  font-size: 14px;
+}
+.parameter-row output {
+  color: #e0e5e7;
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 500;
+}
+.control-select,
+.dropout-fields select {
+  border-color: #3a484f;
+  border-radius: 2px;
+  background: #10181d;
+  color: #d4dadd;
+}
+[data-slot='slider-track'] {
+  height: 3px;
+  background: #303c42;
+}
+[data-slot='slider-range'] {
+  background: #788f9a;
+}
+[data-slot='slider-thumb'] {
+  width: 11px;
+  height: 11px;
+  border-color: #aeb9be;
+  background: #d8dfe2;
+}
+.data-list {
+  gap: 0;
+  font-size: 13px;
+}
+.data-list div {
+  min-height: 35px;
+  align-items: center;
+  border-bottom: 1px solid #253037;
+}
+.data-list dt {
+  color: #909ca2;
+}
+.data-list dd {
+  color: #d1d8db;
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+.map-control-stack {
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  gap: 6px;
+}
+.map-edit-toolbar {
+  width: 100%;
+  min-height: 38px;
+  padding: 3px 126px 3px 3px;
+  gap: 0;
+  border: 1px solid #46535a;
+  background: #0d151ae8;
+}
+.map-tool {
+  height: 30px;
+  gap: 6px;
+  padding: 0 9px;
+  border: 0;
+  border-right: 1px solid #303c42;
+  border-radius: 0;
+  background: transparent;
+  color: #bac3c7;
+  font-size: 13px;
+}
+.map-tool:hover {
+  border-color: #303c42;
+  background: #1b252a;
+  color: #edf1f2;
+}
+.map-tool.active,
+.layer-switch button.active {
+  border-color: #52646d;
+  background: #33434b;
+  color: #f0f3f4;
+}
+.map-tool.danger {
+  border-color: #303c42;
+  color: #bac3c7;
+}
+.map-tool.danger:not(:disabled) {
+  color: #d88a85;
+}
+.map-toolbar-right {
+  top: 4px;
+  right: 4px;
+}
+.layer-switch {
+  height: 30px;
+  border: 0;
+  border-left: 1px solid #46535a;
+  border-radius: 0;
+  background: transparent;
+}
+.layer-switch button {
+  padding: 0 9px;
+  color: #9aa6ac;
+  font-size: 12px;
+}
+.map-click-guide {
+  height: 30px;
+  margin-left: 7px;
+  border-color: #756c53;
+  background: #29271f;
+  color: #d5c99f;
+  font-size: 12px;
+}
+.event-badge {
+  border-color: #4c5a61;
+  border-radius: 2px;
+  background: #11191e;
+  color: #c4ccd0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.map-footer {
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  min-height: 48px;
+  border-color: #46535a;
+  background: #0d151ae8;
+}
+.map-footer div {
+  padding: 7px 11px;
+  border-right-color: #303c42;
+}
+.map-footer span {
+  color: #89969c;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.map-footer strong {
+  margin-top: 4px;
+  color: #e0e5e7;
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.result-table {
+  margin: 0;
+  border-top: 1px solid #344047;
+}
+.result-row {
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #28333a;
+}
+.result-row dt {
+  color: #99a5aa;
+  font-size: 13px;
+}
+.result-row dd {
+  margin: 0;
+  color: #e2e7e9;
+  font-family: var(--font-data);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.result-row.tone-amber dd {
+  color: #c7aa6d;
+}
+.result-row.tone-red dd {
+  color: #d87a75;
+}
+.model-status {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #8d999f;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.model-status.active {
+  border: 0;
+  background: transparent;
+  color: #b9c5ca;
+}
+.current-model-summary {
+  display: block;
+  padding-bottom: 10px;
+}
+.current-model-summary strong {
+  color: #d9dfe2;
+  font-size: 14px;
+  font-weight: 600;
+}
+.current-model-summary div > span {
+  color: #8f9ba1;
+  font-size: 13px;
+}
+.current-model-data {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 1px solid #28333a;
+}
+.metric-grid {
+  display: block;
+  margin-top: 0;
+}
+.metric-grid .metric-card {
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid #28333a;
+  background: transparent;
+}
+.metric-grid .metric-card svg {
+  display: none;
+}
+.metric-grid .metric-card span {
+  color: #99a5aa;
+  font-size: 13px;
+}
+.metric-grid .metric-card strong {
+  grid-column: auto;
+  color: #e2e7e9;
+  font-family: var(--font-data);
+  font-size: 14px;
+  font-weight: 600;
+}
+.metric-grid .metric-card.tone-amber strong {
+  color: #c7aa6d;
+}
+.metric-grid .metric-card.tone-red strong {
+  color: #d87a75;
+}
+.event-list li {
+  grid-template-columns: 48px 1fr;
+  padding: 10px 0;
+  border-bottom-color: #28333a;
+}
+.event-list time {
+  color: #7f8c92;
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+.event-list strong {
+  color: #c9d0d3;
+  font-size: 13px;
+  font-weight: 500;
+}
+.event-list span {
+  color: #849198;
+  font-size: 12px;
+}
+.workspace-page {
+  background: #0b1216;
+}
+.workspace-card {
+  border-color: #334047;
+  background: #10181d;
+}
+.workspace-card h2,
+.workspace-card h3 {
+  color: #dce2e5;
+  font-family: var(--font-ui);
+}
+.workspace-card p,
+.evaluation-note p {
+  color: #929fa5;
+  font-size: 13px;
+}
+.workspace-status {
+  border-color: #46545b;
+  border-radius: 2px;
+  background: #141d22;
+  color: #c5cdd1;
+}
+@media (max-width: 1280px) {
+  .mission-shell {
+    grid-template-columns: 250px minmax(590px, 1fr) 300px;
+  }
+  .mission-tab {
+    min-width: 92px;
+    padding-inline: 12px;
+  }
 }

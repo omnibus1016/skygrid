@@ -10,7 +10,6 @@ import {
   useState,
 } from 'react';
 import {
-  Activity,
   AlertTriangle,
   BatteryMedium,
   Bot,
@@ -29,15 +28,12 @@ import {
   MapPinPlus,
   Pause,
   Play,
-  Radio,
   RefreshCw,
   Route,
   Satellite,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   StepForward,
-  TimerReset,
   Trash2,
   Upload,
   Zap,
@@ -245,6 +241,23 @@ type MapContextMenu = {
   droneId?: string;
 };
 
+function ResultRow({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'amber' | 'red';
+}) {
+  return (
+    <div className={`result-row tone-${tone}`}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
 function MetricCard({
   icon,
   label,
@@ -342,6 +355,7 @@ export default function SkygridApp() {
   }, []);
 
   const metrics = useMemo(() => missionMetrics(mission), [mission]);
+  const hasMissionResults = mission.time > 0 || mission.completed;
   const selectedDrone =
     mission.drones.find((drone) => drone.id === selectedDroneId) ??
     mission.drones[0];
@@ -1529,19 +1543,19 @@ export default function SkygridApp() {
         >
           <TabsList variant="line" className="h-14 gap-1">
             <TabsTrigger value="field" className="mission-tab">
-              <Radio /> 현장 운용
+              현장 운용
             </TabsTrigger>
             <TabsTrigger value="analysis" className="mission-tab">
-              <Database /> 비행 검증
+              비행 검증
             </TabsTrigger>
             <TabsTrigger value="simulation" className="mission-tab">
-              <Bot /> 가상 실험
+              임무 모의
             </TabsTrigger>
             <TabsTrigger value="evaluation" className="mission-tab">
-              <FileChartColumn /> 성능 비교
+              성능 평가
             </TabsTrigger>
             <TabsTrigger value="training" className="mission-tab">
-              <BrainCircuit /> AI 학습
+              모델 학습
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1584,7 +1598,7 @@ export default function SkygridApp() {
               <>
                 <div className="rail-section">
                   <div className="section-heading">
-                    <span>가상 실험</span>
+                    <span>임무 모의</span>
                     <span>{formatMissionTime(mission.time)}</span>
                   </div>
                   <div className="button-pair">
@@ -1603,10 +1617,10 @@ export default function SkygridApp() {
                         <Play />
                       )}
                       {mission.completed
-                        ? '다시 실험'
+                        ? '다시 실행'
                         : mission.running
                           ? '일시 정지'
-                          : '실험 시작'}
+                          : '모의 시작'}
                     </Button>
                     <Button
                       variant="outline"
@@ -1627,7 +1641,7 @@ export default function SkygridApp() {
                       mission.running || mission.completed || !missionReady
                     }
                   >
-                    <StepForward /> 10초 단위 진행
+                    <StepForward /> 10초 진행
                   </Button>
                 </div>
 
@@ -1642,8 +1656,7 @@ export default function SkygridApp() {
 
                 <div className="rail-section parameter-panel">
                   <div className="section-heading">
-                    <span>실험 조건</span>
-                    <SlidersHorizontal size={14} />
+                    <span>모의 조건</span>
                   </div>
                   <ParameterSlider
                     label="초기 기체"
@@ -1707,7 +1720,7 @@ export default function SkygridApp() {
                     }
                   />
                   <ParameterSlider
-                    label="실험 배속"
+                    label="모의 배속"
                     value={config.simRate}
                     suffix="×"
                     min={1}
@@ -2384,7 +2397,7 @@ export default function SkygridApp() {
                 </strong>
               </div>
               <div>
-                <span>AI 계산</span>
+                <span>경로 산출</span>
                 <strong>
                   {mission.inferenceMs
                     ? `${mission.inferenceMs.toFixed(1)} ms`
@@ -2392,13 +2405,13 @@ export default function SkygridApp() {
                 </strong>
               </div>
               <div>
-                <span>위치 출처</span>
+                <span>위치 자료</span>
                 <strong>
                   {mode === 'analysis'
                     ? 'DJI 로그'
                     : mode === 'field'
                       ? '운용자 입력'
-                      : '가상'}
+                      : '모의'}
                 </strong>
               </div>
             </div>
@@ -2426,46 +2439,24 @@ export default function SkygridApp() {
                           : '대기'}
                     </span>
                   </div>
-                  <div className="metric-hero">
-                    <div
-                      className="metric-ring"
-                      style={
-                        {
-                          '--value': `${(metrics.postFailureAverageContinuity ?? 0) * 3.6}deg`,
-                        } as React.CSSProperties
-                      }
-                    >
-                      <span>
-                        {metrics.postFailureAverageContinuity === null
+                  <dl className="result-table">
+                    <ResultRow
+                      label="이탈 후 평균 연속성"
+                      value={
+                        metrics.postFailureAverageContinuity === null
                           ? '—'
-                          : metrics.postFailureAverageContinuity.toFixed(0)}
-                      </span>
-                      {metrics.postFailureAverageContinuity !== null && (
-                        <small>%</small>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-slate-100">
-                        이탈 후 평균 연속성
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        기체 이탈 이후 기준
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mission-progress">
-                    <div>
-                      <span>재방문 기한 준수율</span>
-                      <strong>{metrics.revisitCompliance.toFixed(0)}%</strong>
-                    </div>
-                    <Progress
-                      value={metrics.revisitCompliance}
-                      className="h-1.5 bg-white/10"
+                          : `${metrics.postFailureAverageContinuity.toFixed(0)} %`
+                      }
                     />
-                  </div>
-                  <div className="metric-grid">
-                    <MetricCard
-                      icon={<Activity />}
+                    <ResultRow
+                      label="재방문 기한 준수율"
+                      value={
+                        hasMissionResults
+                          ? `${metrics.revisitCompliance.toFixed(0)} %`
+                          : '—'
+                      }
+                    />
+                    <ResultRow
                       label="이탈 후 최저 연속성"
                       value={
                         mission.failureTime === null
@@ -2476,63 +2467,74 @@ export default function SkygridApp() {
                         mission.failureTime !== null &&
                         metrics.minimumPostFailureContinuity < 70
                           ? 'amber'
-                          : 'cyan'
+                          : 'neutral'
                       }
                     />
-                    <MetricCard
-                      icon={<TimerReset />}
+                    <ResultRow
                       label="담당구역 회복"
                       value={
                         metrics.recoverySeconds === null
                           ? '—'
                           : `${metrics.recoverySeconds.toFixed(0)} 초`
                       }
-                      tone={metrics.recoverySeconds !== null ? 'cyan' : 'amber'}
                     />
-                    <MetricCard
-                      icon={<Gauge />}
+                    <ResultRow
                       label="누적 거리"
-                      value={`${metrics.totalDistanceKm.toFixed(2)} km`}
-                    />
-                    <MetricCard
-                      icon={<Route />}
-                      label="기지 복귀"
-                      value={`${metrics.returnCount} 회`}
-                    />
-                    <MetricCard
-                      icon={<BatteryMedium />}
-                      label="최저 배터리"
-                      value={`${metrics.minimumBattery.toFixed(0)} %`}
-                      tone={
-                        metrics.minimumBattery < 20
-                          ? 'red'
-                          : metrics.minimumBattery < 30
-                            ? 'amber'
-                            : 'cyan'
+                      value={
+                        hasMissionResults
+                          ? `${metrics.totalDistanceKm.toFixed(2)} km`
+                          : '—'
                       }
                     />
-                    <MetricCard
-                      icon={<ShieldCheck />}
-                      label="예비전력 위반"
-                      value={`${metrics.reserveViolations} 회`}
-                      tone={metrics.reserveViolations ? 'red' : 'cyan'}
+                    <ResultRow
+                      label="기지 복귀"
+                      value={
+                        hasMissionResults ? `${metrics.returnCount} 회` : '—'
+                      }
                     />
-                  </div>
+                    <ResultRow
+                      label="최저 배터리"
+                      value={
+                        hasMissionResults && mission.drones.length
+                          ? `${metrics.minimumBattery.toFixed(0)} %`
+                          : '—'
+                      }
+                      tone={
+                        !hasMissionResults || !mission.drones.length
+                          ? 'neutral'
+                          : metrics.minimumBattery < 20
+                            ? 'red'
+                            : metrics.minimumBattery < 30
+                              ? 'amber'
+                              : 'neutral'
+                      }
+                    />
+                    <ResultRow
+                      label="예비전력 위반"
+                      value={
+                        hasMissionResults
+                          ? `${metrics.reserveViolations} 회`
+                          : '—'
+                      }
+                      tone={
+                        hasMissionResults && metrics.reserveViolations
+                          ? 'red'
+                          : 'neutral'
+                      }
+                    />
+                  </dl>
                 </div>
 
                 <div className="rail-section current-model-card">
                   <div className="section-heading">
-                    <span>현재 학습 모델</span>
+                    <span>경로계획 모델</span>
                     <span
                       className={`model-status ${config.planner === 'rl' ? 'active' : ''}`}
                     >
-                      {config.planner === 'rl' ? '적용 중' : '대기'}
+                      {config.planner === 'rl' ? '사용 중' : '대기'}
                     </span>
                   </div>
                   <div className="current-model-summary">
-                    <span className="current-model-icon">
-                      <BrainCircuit size={19} />
-                    </span>
                     <div>
                       <strong>물리 제약 결합 DQN</strong>
                       <span>
@@ -2544,11 +2546,11 @@ export default function SkygridApp() {
                   </div>
                   <dl className="data-list current-model-data">
                     <div>
-                      <dt>학습 시나리오</dt>
+                      <dt>학습 규모</dt>
                       <dd>{policyStats.episodes.toLocaleString()}회</dd>
                     </div>
                     <div>
-                      <dt>현재 경로 계산</dt>
+                      <dt>계획 방식</dt>
                       <dd>{PLANNER_LABEL[config.planner]}</dd>
                     </div>
                   </dl>
@@ -2672,7 +2674,7 @@ function TrainingWorkspace({
           <div className="workspace-kicker">
             <BrainCircuit /> 모델 관리
           </div>
-          <h1>AI 학습</h1>
+          <h1>모델 학습</h1>
           <p>
             {currentSetupReady
               ? '현재 가상실험 구성 반영'
@@ -2893,7 +2895,7 @@ function EvaluationWorkspace({
           <div className="workspace-kicker">
             <FileChartColumn /> 비교 평가
           </div>
-          <h1>성능 비교</h1>
+          <h1>성능 평가</h1>
           <p>동일 조건에서 세 경로 방식을 비교</p>
         </div>
         <Badge variant="outline" className="workspace-status">
@@ -2962,7 +2964,6 @@ function DropoutControl({
     <div className="rail-section dropout-control">
       <div className="section-heading">
         <span>기체 이탈 입력</span>
-        <AlertTriangle size={14} />
       </div>
       <div className="dropout-fields">
         <label>
