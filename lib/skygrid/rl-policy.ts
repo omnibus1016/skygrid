@@ -18,11 +18,10 @@ import type {
  * (drone, waypoint) pair for the fleet. Training and inference share the same
  * geographic, battery, dwell, revisit and return-to-base calculations.
  */
-const MODEL_VERSION = 2 as const;
-const INPUTS = 16;
-const HIDDEN = 36;
-const DISTANCE_SCALE_KM = 12;
-const NETWORK_SCORE_WEIGHT = 1.5;
+const MODEL_VERSION = 3 as const;
+const INPUTS = 20;
+const HIDDEN = 48;
+const NETWORK_SCORE_WEIGHT = 1.25;
 
 type NextCandidate = {
   features: number[];
@@ -46,6 +45,8 @@ type CandidateContext = {
   reserveMargin: number;
   relativeAdvantage: number;
   localDensity: number;
+  workloadSeconds: number;
+  routeLoad: number;
 };
 
 type TrainingScenario = {
@@ -53,6 +54,9 @@ type TrainingScenario = {
   tasks: Waypoint[];
   elapsedByDrone: number[];
   missionTime: number;
+  horizonSec: number;
+  steps: number;
+  maxSteps: number;
 };
 
 type TrainingCandidate = CandidateContext & {
@@ -114,6 +118,10 @@ function candidateFeatureVector({
   transitRatio,
   dwellRatio,
   returnDistanceKm,
+  routeLoad,
+  workloadRatio,
+  relativeWorkload,
+  slackRatio,
 }: {
   distanceKm: number;
   priority: number;
@@ -131,24 +139,34 @@ function candidateFeatureVector({
   transitRatio: number;
   dwellRatio: number;
   returnDistanceKm: number;
+  routeLoad: number;
+  workloadRatio: number;
+  relativeWorkload: number;
+  slackRatio: number;
 }): number[] {
+  const logarithmicDistance = (distanceKm: number) =>
+    clamp(Math.log1p(Math.max(0, distanceKm)) / Math.log1p(80), 0, 1);
   return [
     1,
-    clamp(distanceKm / DISTANCE_SCALE_KM, 0, 1),
+    logarithmicDistance(distanceKm),
     clamp(priority / 5, 0, 1),
     clamp(urgency / 2, 0, 1),
     clamp(battery, 0, 1),
     clamp(expectedBatteryUse / Math.max(0.05, usableBattery), 0, 2) / 2,
-    clamp(remaining / 24, 0, 1),
+    clamp(remaining / 40, 0, 1),
     overdue ? 1 : 0,
-    clamp(teamSize / 8, 0, 1),
+    clamp(teamSize / 12, 0, 1),
     clamp(averageBattery, 0, 1),
     clamp(relativeAdvantage, 0, 1),
     clamp(localDensity / 6, 0, 1),
     clamp(reserveMargin, -0.25, 1) / 1.25 + 0.2,
     clamp(transitRatio / 2, 0, 1),
     clamp(dwellRatio, 0, 1),
-    clamp(returnDistanceKm / DISTANCE_SCALE_KM, 0, 1),
+    logarithmicDistance(returnDistanceKm),
+    clamp(routeLoad / 10, 0, 1),
+    clamp(workloadRatio / 3, 0, 1),
+    clamp(relativeWorkload / 3, 0, 1),
+    clamp((slackRatio + 2) / 3, 0, 1),
   ];
 }
 
@@ -277,6 +295,8 @@ function candidateContext(
   remaining: number,
   team: Drone[],
   pending: Waypoint[],
+  workloadSeconds = 0,
+  averageWorkloadSeconds = 0,
 ): CandidateContext {
   const fleet = [
     drone,
@@ -321,6 +341,13 @@ function candidateContext(
   const averageBattery =
     fleet.reduce((sum, candidate) => sum + candidate.battery / 100, 0) /
     Math.max(1, fleet.length);
+  const workloadRatio = workloadSeconds / Math.max(30, waypoint.revisitSec);
+  const relativeWorkload =
+    workloadSeconds / Math.max(30, averageWorkloadSeconds || workloadSeconds);
+  const slackRatio =
+    (waypoint.revisitSec - age - visitSeconds) /
+    Math.max(1, waypoint.revisitSec);
+  const routeLoad = drone.route.length;
 
   return {
     features: candidateFeatureVector({
@@ -340,6 +367,10 @@ function candidateContext(
       transitRatio: visitSeconds / Math.max(1, waypoint.revisitSec),
       dwellRatio: waypoint.dwellSec / Math.max(1, waypoint.revisitSec),
       returnDistanceKm: returnDistanceM / 1_000,
+      routeLoad,
+      workloadRatio,
+      relativeWorkload,
+      slackRatio,
     }),
     distanceM,
     transitSeconds,
@@ -349,6 +380,8 @@ function candidateContext(
     reserveMargin,
     relativeAdvantage,
     localDensity,
+    workloadSeconds,
+    routeLoad,
   };
 }
 
@@ -359,19 +392,25 @@ function operationalPrior(
   const deadlinePressure = Math.min(1, context.projectedAgeRatio);
   const overdue = Math.max(0, context.projectedAgeRatio - 1);
   const missionValue =
-    waypoint.priority * (1 + 1.4 * deadlinePressure + 2 * overdue);
+    waypoint.priority * (1 + 2.6 * deadlinePressure + 6 * overdue);
   const serviceMinutes = Math.max(0.25, context.visitSeconds / 60);
   const efficientMissionValue = missionValue / (0.65 + serviceMinutes * 0.8);
   const energyCost = context.expectedBatteryUse * 0.02;
   const reservePenalty = Math.max(0, 0.2 - context.reserveMargin) * 4;
   const allocationBonus = context.relativeAdvantage * 0.8;
-  const clusterBonus = Math.min(4, context.localDensity) * 0.15;
+  const clusterBonus = Math.min(4, context.localDensity) * 0.05;
+  const idleActivationBonus = context.routeLoad === 0 ? 1.4 : 0;
+  const workloadPenalty =
+    (context.workloadSeconds / Math.max(30, waypoint.revisitSec)) * 0.9 +
+    Math.max(0, context.routeLoad - 1) * 0.3;
   return (
     efficientMissionValue +
     allocationBonus +
     clusterBonus -
     energyCost -
-    reservePenalty
+    reservePenalty +
+    idleActivationBonus -
+    workloadPenalty
   );
 }
 
@@ -393,6 +432,8 @@ export function missionFeatures(
   remaining: number,
   team: Drone[] = [],
   pending: Waypoint[] = [],
+  workloadSeconds = 0,
+  averageWorkloadSeconds = 0,
 ): number[] {
   return candidateContext(
     drone,
@@ -401,6 +442,8 @@ export function missionFeatures(
     remaining,
     team,
     pending,
+    workloadSeconds,
+    averageWorkloadSeconds,
   ).features;
 }
 
@@ -427,6 +470,8 @@ export function plannerScore(
   policy: CandidateDqn,
   team: Drone[] = [],
   pending: Waypoint[] = [],
+  workloadSeconds = 0,
+  averageWorkloadSeconds = 0,
 ): number {
   const distanceM = haversineMeters(drone, waypoint);
   const age = Math.max(0, missionTime - waypoint.lastVisited);
@@ -440,23 +485,82 @@ export function plannerScore(
     remaining,
     team,
     pending,
+    workloadSeconds,
+    averageWorkloadSeconds,
   );
   return rlCandidateScore(policy, waypoint, context);
 }
 
-export function assignRoutes(
+type RoutePlan = { drones: Drone[]; waypoints: Waypoint[] };
+
+function buildRoutePlan(
   drones: Drone[],
   waypoints: Waypoint[],
   missionTime: number,
   kind: PlannerKind,
   policy: CandidateDqn,
-): { drones: Drone[]; waypoints: Waypoint[] } {
+): RoutePlan {
   const active = drones
     .filter((drone) => drone.status === 'active' || drone.status === 'ready')
     .map((drone) => ({ ...drone, route: [], routeIndex: 0 }));
   const virtual: Drone[] = active.map((drone) => ({ ...drone }));
   const virtualElapsed = virtual.map(() => 0);
-  const pending = waypoints.map((waypoint) => ({ ...waypoint }));
+  const waypointCopies: Waypoint[] = waypoints.map((waypoint) => ({
+    ...waypoint,
+    assignedDrone: undefined,
+  }));
+  const pending = [...waypointCopies];
+
+  const assignCandidate = (droneIndex: number, targetIndex: number) => {
+    const drone = virtual[droneIndex];
+    const [target] = pending.splice(targetIndex, 1);
+    drone.route.push(target.id);
+    const transitDistance = haversineMeters(drone, target);
+    virtualElapsed[droneIndex] +=
+      transitDistance / Math.max(1, drone.speedMps) + target.dwellSec;
+    drone.battery -=
+      (transitDistance / 1000) * drone.consumptionPerKm +
+      (target.dwellSec / 60) * drone.loiterConsumptionPerMin;
+    drone.lat = target.lat;
+    drone.lng = target.lng;
+    target.assignedDrone = drone.id;
+  };
+
+  const bestCandidate = (droneIndices: number[]) => {
+    let best: {
+      droneIndex: number;
+      targetIndex: number;
+      score: number;
+    } | null = null;
+    const averageWorkload = mean(virtualElapsed);
+    for (const droneIndex of droneIndices) {
+      for (
+        let targetIndex = 0;
+        targetIndex < pending.length;
+        targetIndex += 1
+      ) {
+        const drone = virtual[droneIndex];
+        const target = pending[targetIndex];
+        const requiredEnergy = estimateSortieEnergy(drone, target);
+        if (drone.battery - requiredEnergy < drone.reserveBattery) continue;
+        const score = plannerScore(
+          kind,
+          drone,
+          target,
+          missionTime + virtualElapsed[droneIndex],
+          pending.length,
+          policy,
+          virtual,
+          pending,
+          virtualElapsed[droneIndex],
+          averageWorkload,
+        );
+        if (!best || score > best.score)
+          best = { droneIndex, targetIndex, score };
+      }
+    }
+    return best;
+  };
 
   for (let index = 0; index < virtual.length; index += 1) {
     const drone = virtual[index];
@@ -492,66 +596,130 @@ export function assignRoutes(
     drone.lat = target.lat;
     drone.lng = target.lng;
     target.assignedDrone = drone.id;
-    const original = waypoints.find((waypoint) => waypoint.id === target.id);
-    if (original) original.assignedDrone = drone.id;
   }
 
-  while (pending.length && virtual.length) {
-    let best: {
-      droneIndex: number;
-      targetIndex: number;
-      score: number;
-    } | null = null;
-    for (let droneIndex = 0; droneIndex < virtual.length; droneIndex += 1) {
-      for (
-        let targetIndex = 0;
-        targetIndex < pending.length;
-        targetIndex += 1
-      ) {
-        const drone = virtual[droneIndex];
-        const target = pending[targetIndex];
-        const requiredEnergy = estimateSortieEnergy(drone, target);
-        if (drone.battery - requiredEnergy < drone.reserveBattery) continue;
-        const score = plannerScore(
-          kind,
-          drone,
-          target,
-          missionTime + virtualElapsed[droneIndex],
-          pending.length,
-          policy,
-          virtual,
-          pending,
-        );
-        if (!best || score > best.score)
-          best = { droneIndex, targetIndex, score };
-      }
+  if (pending.length) {
+    const unseeded = new Set(
+      virtual
+        .map((drone, index) => ({ drone, index }))
+        .filter(({ drone }) => drone.route.length === 0)
+        .map(({ index }) => index),
+    );
+    while (pending.length && unseeded.size) {
+      const best = bestCandidate([...unseeded]);
+      if (!best) break;
+      assignCandidate(best.droneIndex, best.targetIndex);
+      unseeded.delete(best.droneIndex);
     }
-    if (!best) break;
-    const drone = virtual[best.droneIndex];
-    const [target] = pending.splice(best.targetIndex, 1);
-    drone.route.push(target.id);
-    const transitDistance = haversineMeters(drone, target);
-    virtualElapsed[best.droneIndex] +=
-      transitDistance / Math.max(1, drone.speedMps) + target.dwellSec;
-    drone.battery -=
-      (transitDistance / 1000) * drone.consumptionPerKm +
-      (target.dwellSec / 60) * drone.loiterConsumptionPerMin;
-    drone.lat = target.lat;
-    drone.lng = target.lng;
-    target.assignedDrone = drone.id;
-    const source = waypoints.find((waypoint) => waypoint.id === target.id);
-    if (source) source.assignedDrone = drone.id;
   }
 
   const routes = new Map(virtual.map((drone) => [drone.id, drone.route]));
+  const assignment = new Map(
+    waypointCopies.map((waypoint) => [waypoint.id, waypoint.assignedDrone]),
+  );
   return {
     drones: drones.map((drone) =>
       routes.has(drone.id)
         ? { ...drone, route: routes.get(drone.id) ?? [], routeIndex: 0 }
         : drone,
     ),
-    waypoints: waypoints.map((waypoint) => ({ ...waypoint })),
+    waypoints: waypoints.map((waypoint) => ({
+      ...waypoint,
+      assignedDrone: assignment.get(waypoint.id),
+    })),
   };
+}
+
+function routePlanScore(
+  plan: RoutePlan,
+  sourceDrones: Drone[],
+  sourceWaypoints: Waypoint[],
+  missionTime: number,
+): number {
+  const waypointById = new Map(
+    sourceWaypoints.map((waypoint) => [waypoint.id, waypoint]),
+  );
+  const assigned = new Set<string>();
+  const workloads: number[] = [];
+  let cost = 0;
+
+  for (const plannedDrone of plan.drones) {
+    if (plannedDrone.status === 'failed') continue;
+    const source =
+      sourceDrones.find((drone) => drone.id === plannedDrone.id) ??
+      plannedDrone;
+    let position: GeoPoint = source;
+    let elapsed = 0;
+    for (const waypointId of plannedDrone.route) {
+      const waypoint = waypointById.get(waypointId);
+      if (!waypoint) continue;
+      const transitSeconds =
+        haversineMeters(position, waypoint) / Math.max(1, source.speedMps);
+      elapsed += transitSeconds + waypoint.dwellSec;
+      const completionTime = missionTime + elapsed;
+      const ageAtVisit = Math.max(0, completionTime - waypoint.lastVisited);
+      const latenessRatio =
+        Math.max(0, ageAtVisit - waypoint.revisitSec) /
+        Math.max(1, waypoint.revisitSec);
+      const responseRatio = elapsed / Math.max(1, waypoint.revisitSec);
+      cost +=
+        waypoint.priority *
+        (responseRatio * 0.65 + latenessRatio * latenessRatio * 7 - 12);
+      assigned.add(waypointId);
+      position = waypoint;
+    }
+    workloads.push(elapsed);
+    if (
+      sourceWaypoints.length >=
+        sourceDrones.filter((drone) => drone.status !== 'failed').length &&
+      plannedDrone.route.length === 0
+    ) {
+      cost += 8;
+    }
+  }
+
+  for (const waypoint of sourceWaypoints) {
+    if (assigned.has(waypoint.id)) continue;
+    const ageRatio =
+      Math.max(0, missionTime - waypoint.lastVisited) /
+      Math.max(1, waypoint.revisitSec);
+    const overdue = Math.max(0, ageRatio - 1);
+    cost +=
+      waypoint.priority *
+      (0.5 + Math.min(1, ageRatio) * 8 + overdue * overdue * 12);
+  }
+
+  if (workloads.length > 1) {
+    const average = mean(workloads);
+    const spread = Math.sqrt(
+      mean(workloads.map((workload) => (workload - average) ** 2)),
+    );
+    cost += spread / 45;
+  }
+  return -cost;
+}
+
+export function assignRoutes(
+  drones: Drone[],
+  waypoints: Waypoint[],
+  missionTime: number,
+  kind: PlannerKind,
+  policy: CandidateDqn,
+): RoutePlan {
+  if (kind !== 'rl')
+    return buildRoutePlan(drones, waypoints, missionTime, kind, policy);
+
+  const candidates = [
+    buildRoutePlan(drones, waypoints, missionTime, 'rl', policy),
+    buildRoutePlan(drones, waypoints, missionTime, 'nearest', policy),
+    buildRoutePlan(drones, waypoints, missionTime, 'priority', policy),
+  ];
+  return candidates.reduce((best, candidate) =>
+    routePlanScore(candidate, drones, waypoints, missionTime) >
+    routePlanScore(best, drones, waypoints, missionTime)
+      ? candidate
+      : best,
+  );
 }
 
 function offsetPoint(
@@ -620,7 +788,7 @@ function createTrainingScenario(
         ),
       )
     : 4;
-  const radiusKm = clamp(contextRadiusKm * (0.8 + random() * 0.5), 0.8, 12);
+  const radiusKm = clamp(contextRadiusKm * (0.7 + random() * 0.7), 0.8, 30);
   const contextStart = Math.max(
     context?.missionTime ?? 0,
     context?.failureAt ?? 0,
@@ -648,7 +816,7 @@ function createTrainingScenario(
         );
       });
   } else {
-    const initialCount = 2 + Math.floor(random() * 6);
+    const initialCount = 2 + Math.floor(random() * 7);
     drones = Array.from({ length: initialCount }, (_, index) => {
       const profile =
         DRONE_PROFILES[Math.floor(random() * DRONE_PROFILES.length)];
@@ -708,7 +876,7 @@ function createTrainingScenario(
       };
     });
   } else {
-    const taskCount = 6 + Math.floor(random() * 15);
+    const taskCount = 5 + Math.floor(random() * 26);
     tasks = Array.from({ length: taskCount }, (_, index) => {
       const revisitSec = 90 + Math.round(random() * 510);
       const point = offsetPoint(
@@ -728,33 +896,85 @@ function createTrainingScenario(
     });
   }
 
+  const horizonSec = useCurrentSetup
+    ? clamp((context?.durationSec ?? 1_800) - missionTime, 300, 1_800)
+    : 600 + Math.round(random() * 900);
   return {
     drones,
     tasks,
     elapsedByDrone: drones.map(() => 0),
     missionTime,
+    horizonSec,
+    steps: 0,
+    maxSteps: Math.max(80, tasks.length * 14),
   };
+}
+
+function trainingScenarioDone(scenario: TrainingScenario): boolean {
+  return (
+    scenario.steps >= scenario.maxSteps ||
+    Math.min(...scenario.elapsedByDrone) >= scenario.horizonSec
+  );
+}
+
+function recycleEarliestTrainingDrone(scenario: TrainingScenario): boolean {
+  const earliest = Math.min(...scenario.elapsedByDrone);
+  const droneIndex = scenario.elapsedByDrone.indexOf(earliest);
+  if (droneIndex < 0 || earliest >= scenario.horizonSec) return false;
+  const drone = scenario.drones[droneIndex];
+  const atBase =
+    haversineMeters(drone, { lat: drone.homeLat, lng: drone.homeLng }) < 3;
+  if (atBase && drone.battery >= drone.maxBattery - 0.1) {
+    scenario.elapsedByDrone[droneIndex] = scenario.horizonSec;
+    return true;
+  }
+  const returnSeconds =
+    haversineMeters(drone, { lat: drone.homeLat, lng: drone.homeLng }) /
+    Math.max(1, drone.speedMps);
+  scenario.elapsedByDrone[droneIndex] = Math.min(
+    scenario.horizonSec,
+    earliest + returnSeconds + drone.turnaroundSec,
+  );
+  drone.lat = drone.homeLat;
+  drone.lng = drone.homeLng;
+  drone.battery = drone.maxBattery;
+  drone.route = [];
+  return true;
 }
 
 function feasibleTrainingCandidates(
   scenario: TrainingScenario,
 ): TrainingCandidate[] {
   const candidates: TrainingCandidate[] = [];
+  const earliest = Math.min(...scenario.elapsedByDrone);
+  const averageWorkload = mean(scenario.elapsedByDrone);
   for (
     let droneIndex = 0;
     droneIndex < scenario.drones.length;
     droneIndex += 1
   ) {
+    if (
+      scenario.elapsedByDrone[droneIndex] > earliest + 1 ||
+      scenario.elapsedByDrone[droneIndex] >= scenario.horizonSec
+    )
+      continue;
     const drone = scenario.drones[droneIndex];
     for (let taskIndex = 0; taskIndex < scenario.tasks.length; taskIndex += 1) {
       const task = scenario.tasks[taskIndex];
+      const decisionTime =
+        scenario.missionTime + scenario.elapsedByDrone[droneIndex];
+      const age = Math.max(0, decisionTime - task.lastVisited);
+      if (task.visitedCount > 0 && age < Math.min(20, task.revisitSec * 0.1))
+        continue;
       const context = candidateContext(
         drone,
         task,
-        scenario.missionTime + scenario.elapsedByDrone[droneIndex],
+        decisionTime,
         scenario.tasks.length,
         scenario.drones,
         scenario.tasks,
+        scenario.elapsedByDrone[droneIndex],
+        averageWorkload,
       );
       if (drone.battery - context.expectedBatteryUse < drone.reserveBattery)
         continue;
@@ -772,34 +992,60 @@ function feasibleTrainingCandidates(
 function applyTrainingAction(
   scenario: TrainingScenario,
   selected: TrainingCandidate,
-): { reward: number; quality: number; priority: number } {
+): { reward: number; coverageCredit: number } {
   const drone = scenario.drones[selected.droneIndex];
   const task = scenario.tasks[selected.taskIndex];
-  const visitTime =
-    scenario.missionTime +
-    scenario.elapsedByDrone[selected.droneIndex] +
-    selected.visitSeconds;
+  const previousElapsed = scenario.elapsedByDrone[selected.droneIndex];
+  const visitOffset = previousElapsed + selected.visitSeconds;
+  const visitTime = scenario.missionTime + visitOffset;
   const ageAtVisit = Math.max(0, visitTime - task.lastVisited);
   const latenessRatio =
     Math.max(0, ageAtVisit - task.revisitSec) / Math.max(1, task.revisitSec);
-  const timeliness = clamp(1 - latenessRatio, 0, 1);
   const energyUsed =
     (selected.distanceM / 1_000) * drone.consumptionPerKm +
     (task.dwellSec / 60) * drone.loiterConsumptionPerMin;
+  const oldExpiryOffset =
+    task.lastVisited + task.revisitSec - scenario.missionTime;
+  const newExpiryOffset = visitOffset + task.revisitSec;
+  const coverageCredit =
+    task.priority *
+    Math.max(
+      0,
+      Math.min(scenario.horizonSec, newExpiryOffset) -
+        Math.max(0, oldExpiryOffset, visitOffset),
+    );
+  const totalPriority = scenario.tasks.reduce(
+    (sum, waypoint) => sum + waypoint.priority,
+    0,
+  );
+  const continuityGain =
+    coverageCredit / Math.max(1, totalPriority * scenario.horizonSec);
+  const travelPenalty = (selected.distanceM / 1_000) * 0.025;
+  const energyPenalty = energyUsed * 0.012;
+  const latePenalty = task.priority * latenessRatio * 0.55;
+  const reservePenalty = Math.max(0, 0.15 - selected.reserveMargin) * 2;
   const reward =
-    selected.prior / 5 +
-    task.priority * timeliness * 0.7 +
-    selected.reserveMargin * 0.4;
+    continuityGain * 55 +
+    selected.prior * 0.04 -
+    travelPenalty -
+    energyPenalty -
+    latePenalty -
+    reservePenalty;
 
-  scenario.elapsedByDrone[selected.droneIndex] += selected.visitSeconds;
+  scenario.elapsedByDrone[selected.droneIndex] = Math.min(
+    scenario.horizonSec,
+    visitOffset,
+  );
   drone.battery = clamp(drone.battery - energyUsed, 0, drone.maxBattery);
   drone.lat = task.lat;
   drone.lng = task.lng;
-  scenario.tasks.splice(selected.taskIndex, 1);
+  drone.route = [...drone.route.slice(-8), task.id];
+  task.lastVisited = visitTime;
+  task.visitedCount += 1;
+  scenario.steps += 1;
   return {
     reward,
-    quality: task.priority * (0.3 + timeliness * 0.7),
-    priority: task.priority,
+    coverageCredit,
   };
 }
 
@@ -830,16 +1076,25 @@ function evaluateScenario(
     elapsedByDrone: [...source.elapsedByDrone],
     drones: source.drones.map((drone) => ({ ...drone, route: [] })),
     tasks: source.tasks.map((task) => ({ ...task })),
+    horizonSec: source.horizonSec,
+    steps: 0,
+    maxSteps: source.maxSteps,
   };
   const totalPriority = scenario.tasks.reduce(
     (sum, task) => sum + task.priority,
     0,
   );
-  let quality = 0;
-  let servedPriority = 0;
-  while (scenario.tasks.length) {
+  let coverageCredit = scenario.tasks.reduce((sum, task) => {
+    const expiryOffset =
+      task.lastVisited + task.revisitSec - scenario.missionTime;
+    return sum + task.priority * clamp(expiryOffset, 0, scenario.horizonSec);
+  }, 0);
+  while (!trainingScenarioDone(scenario)) {
     const candidates = feasibleTrainingCandidates(scenario);
-    if (!candidates.length) break;
+    if (!candidates.length) {
+      if (!recycleEarliestTrainingDrone(scenario)) break;
+      continue;
+    }
     const selected = candidates.reduce((best, candidate, index) => {
       const task = scenario.tasks[candidate.taskIndex];
       const bestTask = scenario.tasks[candidates[best].taskIndex];
@@ -861,12 +1116,13 @@ function evaluateScenario(
       return score > bestScore ? index : best;
     }, 0);
     const result = applyTrainingAction(scenario, candidates[selected]);
-    quality += result.quality;
-    servedPriority += result.priority;
+    coverageCredit += result.coverageCredit;
   }
-  const completion = totalPriority ? servedPriority / totalPriority : 1;
-  const timeliness = totalPriority ? quality / totalPriority : 1;
-  return clamp((completion * 0.35 + timeliness * 0.65) * 100, 0, 100);
+  return clamp(
+    (coverageCredit / Math.max(1, totalPriority * scenario.horizonSec)) * 100,
+    0,
+    100,
+  );
 }
 
 export function validatePolicy(
@@ -925,11 +1181,12 @@ function* trainDqnPolicyGenerator(
     const scenario = createTrainingScenario(random, context);
     let episodeReward = 0;
 
-    while (scenario.tasks.length) {
+    while (!trainingScenarioDone(scenario)) {
       const candidates = feasibleTrainingCandidates(scenario);
       if (!candidates.length) {
-        episodeReward -= scenario.tasks.length * 0.5;
-        break;
+        episodeReward -= 0.15;
+        if (!recycleEarliestTrainingDrone(scenario)) break;
+        continue;
       }
       let action = 0;
       if (random() < epsilon) {
@@ -950,12 +1207,8 @@ function* trainDqnPolicyGenerator(
       const selected = candidates[action];
       const result = applyTrainingAction(scenario, selected);
       const nextCandidates = feasibleTrainingCandidates(scenario);
-      const done = scenario.tasks.length === 0 || nextCandidates.length === 0;
-      const strandedPenalty =
-        !nextCandidates.length && scenario.tasks.length
-          ? scenario.tasks.reduce((sum, task) => sum + task.priority, 0) * 0.35
-          : 0;
-      const transitionReward = result.reward - strandedPenalty;
+      const done = trainingScenarioDone(scenario);
+      const transitionReward = result.reward;
       replay.push({
         features: selected.features,
         reward: transitionReward,
@@ -1005,8 +1258,8 @@ function* trainDqnPolicyGenerator(
     }
     if (episode % 250 === 0 || episode === episodes) {
       const checkpoint = validatePolicy(policy, context, seed + 70_000, 18);
-      if (checkpoint.rlScore > bestValidationScore) {
-        bestValidationScore = checkpoint.rlScore;
+      if (checkpoint.improvementVsBest > bestValidationScore) {
+        bestValidationScore = checkpoint.improvementVsBest;
         bestPolicy = policy.clone();
       }
     }
@@ -1038,8 +1291,8 @@ function* trainDqnPolicyGenerator(
       modelVersion: MODEL_VERSION,
       trainingScope:
         context && context.drones.length >= 2 && context.waypoints.length >= 3
-          ? '현재 가상실험 구성 70% + 일반화 시나리오 30%'
-          : 'DJI 5개 기체 프로파일 일반화 시나리오',
+          ? '현재 임무 구성 70% + 반복 정찰 일반화 시나리오 30%'
+          : '반복 정찰·기체 이탈·배터리 복귀 일반화 시나리오',
       validation,
     },
   };

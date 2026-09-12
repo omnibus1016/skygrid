@@ -169,7 +169,7 @@ type PolicyBundle = {
   trainedAt: string | null;
 };
 
-const POLICY_STORAGE_KEY = 'skygrid-policy-v2';
+const POLICY_STORAGE_KEY = 'skygrid-policy-v3';
 
 function createPretrainedPolicyBundle(): PolicyBundle {
   const policy = CandidateDqn.fromWeights(PRETRAINED_POLICY_WEIGHTS);
@@ -2677,8 +2677,8 @@ function TrainingWorkspace({
           <h1>모델 학습</h1>
           <p>
             {currentSetupReady
-              ? '현재 가상실험 구성 반영'
-              : 'DJI 기체 프로파일 일반화 학습'}
+              ? '현재 임무 구성 반영'
+              : '반복 정찰 일반화 학습'}
           </p>
         </div>
         <Badge className={`workspace-status ${busy ? 'is-training' : ''}`}>
@@ -2789,19 +2789,19 @@ function TrainingWorkspace({
             <span className="workspace-label">모델 구성</span>
             <div className="training-feature-grid">
               <div>
-                <strong>16</strong>
+                <strong>20</strong>
                 <span>상태 변수</span>
               </div>
               <div>
-                <strong>1–6</strong>
+                <strong>1–8</strong>
                 <span>이탈 후 잔여 기체</span>
               </div>
               <div>
-                <strong>6–20</strong>
+                <strong>5–30</strong>
                 <span>정찰지점</span>
               </div>
               <div>
-                <strong>36</strong>
+                <strong>48</strong>
                 <span>은닉 노드</span>
               </div>
             </div>
@@ -2815,8 +2815,8 @@ function TrainingWorkspace({
           <h2>학습 횟수 선택</h2>
           <p>
             {currentSetupReady
-              ? '현재 구성 변형 70% · 일반화 시나리오 30%'
-              : 'DJI 5개 기체 프로파일 · 무작위 기지·정찰지점'}
+              ? '현재 구성 변형 70% · 반복 정찰 일반화 30%'
+              : 'DJI 5개 기체 프로파일 · 무작위 기지·정찰지점·이탈'}
           </p>
           <div className="training-progress-wrap">
             <div>

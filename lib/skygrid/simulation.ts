@@ -40,6 +40,22 @@ const COLORS = [
   '#fb7185',
   '#60a5fa',
 ];
+
+function operationalFailureDroneId(
+  state: MissionState,
+  preferredId: string,
+): string {
+  const preferred = state.drones.find(
+    (drone) => drone.id === preferredId && drone.route.length > 0,
+  );
+  if (preferred) return preferred.id;
+  return (
+    state.drones
+      .filter((drone) => drone.status !== 'failed' && drone.route.length > 0)
+      .sort((a, b) => b.route.length - a.route.length)[0]?.id ?? preferredId
+  );
+}
+
 function makeEvent(
   time: number,
   kind: MissionEvent['kind'],
@@ -557,15 +573,23 @@ export function advanceMission(
   });
 
   let waypoints = [...waypointMap.values()];
-  const needsPlan = drones.some(
+  const activeRouteCompleted = drones.some(
     (drone) =>
-      (drone.status === 'active' &&
-        drone.phase !== 'dwell' &&
-        drone.routeIndex >= drone.route.length) ||
-      (drone.status === 'ready' &&
-        drone.turnaroundRemainingSec <= 0 &&
-        drone.routeIndex >= drone.route.length),
+      drone.status === 'active' &&
+      drone.phase !== 'dwell' &&
+      drone.routeIndex >= drone.route.length,
   );
+  const hasUnassignedWaypoint = waypoints.some(
+    (waypoint) => !waypoint.assignedDrone,
+  );
+  const readyDroneAvailable = drones.some(
+    (drone) =>
+      drone.status === 'ready' &&
+      drone.turnaroundRemainingSec <= 0 &&
+      drone.routeIndex >= drone.route.length,
+  );
+  const needsPlan =
+    activeRouteCompleted || (hasUnassignedWaypoint && readyDroneAvailable);
 
   if (needsPlan && waypoints.length) {
     const start = performance.now();
@@ -766,12 +790,19 @@ export function runBatchEvaluation(
       completion: 0,
     };
     for (let run = 0; run < runs; run += 1) {
-      const runConfig = {
+      let runConfig = {
         ...config,
         planner: kind,
         randomSeed: config.randomSeed + run * 17,
       };
       let mission = createMission(runConfig, policy);
+      runConfig = {
+        ...runConfig,
+        failureDroneId: operationalFailureDroneId(
+          mission,
+          runConfig.failureDroneId,
+        ),
+      };
       mission = { ...mission, running: true };
       while (mission.running && !mission.completed) {
         mission = advanceMission(
@@ -828,11 +859,6 @@ export function runScenarioComparison(
     { kind: 'priority', label: '중요도 우선' },
     { kind: 'rl', label: '물리 제약 결합 DQN' },
   ];
-  const validFailureDroneId =
-    initialState.drones.find((drone) => drone.id === config.failureDroneId)
-      ?.id ??
-    initialState.drones.find((drone) => drone.status !== 'failed')?.id;
-
   return planners.map(({ kind, label }) => {
     const base = cloneMissionState(initialState);
     const drones = base.drones.map((drone) => ({
@@ -852,13 +878,16 @@ export function runScenarioComparison(
       ...waypoint,
       assignedDrone: undefined,
     }));
+    const planned = assignRoutes(drones, waypoints, base.time, kind, policy);
     const plannerConfig: ScenarioConfig = {
       ...config,
       durationSec: base.time + durationSeconds,
       planner: kind,
-      ...(validFailureDroneId ? { failureDroneId: validFailureDroneId } : {}),
+      failureDroneId: operationalFailureDroneId(
+        { ...base, drones: planned.drones, waypoints: planned.waypoints },
+        config.failureDroneId,
+      ),
     };
-    const planned = assignRoutes(drones, waypoints, base.time, kind, policy);
     let state: MissionState = {
       ...base,
       running: true,
