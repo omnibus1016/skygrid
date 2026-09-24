@@ -1432,6 +1432,41 @@ button {
   color: #687f89;
   font: 12px var(--font-geist-mono);
 }
+.selected-aircraft .aircraft-capability {
+  width: fit-content;
+  margin-top: 7px;
+  padding: 3px 6px;
+  border: 1px solid #31515c;
+  color: #9bc4cd;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.field-guidance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 4px 0 12px;
+  border-top: 1px solid #1c333c;
+  border-left: 1px solid #1c333c;
+}
+.field-guidance-grid > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-right: 1px solid #1c333c;
+  border-bottom: 1px solid #1c333c;
+  background: #08151a;
+}
+.field-guidance-grid span {
+  color: #6f8790;
+  font-size: 10px;
+}
+.field-guidance-grid strong {
+  color: #d0e3e8;
+  font: 600 11px var(--font-geist-mono);
+}
 .aircraft-selector {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1929,6 +1964,33 @@ button {
   display: grid;
   gap: 7px;
 }
+.log-source-guide {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #1b3139;
+}
+.log-source-guide > div {
+  display: grid;
+  gap: 2px;
+}
+.log-source-guide strong {
+  color: #bcd0d6;
+  font-size: 11px;
+}
+.log-source-guide span,
+.log-source-guide p {
+  color: #6e8791;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.log-source-guide p {
+  margin: 2px 0 0;
+  padding: 7px;
+  border-left: 2px solid #3d7887;
+  background: #0a181e;
+}
 .log-item {
   width: 100%;
   display: grid;
@@ -2034,6 +2096,81 @@ button {
 .validation-score strong {
   color: #82eafe;
   font: 700 14px var(--font-geist-mono);
+}
+
+.experiment-protocol-dialog {
+  width: min(760px, calc(100vw - 28px));
+  max-width: 760px;
+  max-height: min(820px, calc(100vh - 32px));
+  overflow-y: auto;
+}
+.protocol-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid #27414b;
+  border-left: 1px solid #27414b;
+}
+.protocol-summary-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-right: 1px solid #27414b;
+  border-bottom: 1px solid #27414b;
+  background: #08151a;
+}
+.protocol-summary-grid span {
+  color: #728b95;
+  font-size: 10px;
+}
+.protocol-summary-grid strong {
+  color: #d3e5ea;
+  font: 600 13px var(--font-geist-mono);
+}
+.protocol-block {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #213942;
+  background: #09161b;
+}
+.protocol-block p {
+  margin: 9px 0 0;
+  color: #8ba1a9;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.protocol-scenario-table {
+  margin-top: 9px;
+  border-top: 1px solid #213942;
+}
+.protocol-scenario-head,
+.protocol-scenario-row {
+  display: grid;
+  grid-template-columns: 80px 130px 1fr;
+  align-items: center;
+  min-height: 31px;
+  border-bottom: 1px solid #1a3038;
+}
+.protocol-scenario-head {
+  color: #657f89;
+  font-size: 10px;
+}
+.protocol-scenario-row {
+  color: #91a8b0;
+  font-size: 11px;
+}
+.protocol-scenario-row strong {
+  color: #c6dbe1;
+  font-family: var(--font-geist-mono);
+}
+
+@media (max-width: 640px) {
+  .protocol-summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .protocol-scenario-head,
+  .protocol-scenario-row {
+    grid-template-columns: 65px 95px 1fr;
+  }
 }
 
 @media (max-height: 850px) {

@@ -1,5 +1,7 @@
 import { haversineMeters, pointToSegmentMeters, polylineDistance } from './geo';
+import { getDroneProfile } from './drone-profiles';
 import type {
+  DroneProfileId,
   FlightLog,
   FlightLogPoint,
   GeoPoint,
@@ -38,7 +40,11 @@ function normalizeHeader(value: string): string {
 
 function findIndex(headers: string[], aliases: string[]): number {
   const normalized = headers.map(normalizeHeader);
-  return normalized.findIndex((header) => aliases.includes(header));
+  const exact = normalized.findIndex((header) => aliases.includes(header));
+  if (exact >= 0) return exact;
+  return normalized.findIndex((header) =>
+    aliases.some((alias) => alias.length >= 5 && header.startsWith(alias)),
+  );
 }
 
 function numberAt(row: string[], index: number, fallback = 0): number {
@@ -51,6 +57,11 @@ export function parseFlightCsv(
   text: string,
   fileName: string,
   logIndex = 0,
+  metadata?: {
+    profileId?: DroneProfileId;
+    aircraftModel?: string;
+    plannedPath?: GeoPoint[];
+  },
 ): FlightLog {
   const lines = text
     .replace(/^\uFEFF/, '')
@@ -164,6 +175,9 @@ export function parseFlightCsv(
     fileName,
     droneName: fileName.replace(/\.[^.]+$/, '').slice(0, 28),
     color: LOG_COLORS[logIndex % LOG_COLORS.length],
+    aircraftProfileId: metadata?.profileId,
+    aircraftModel: metadata?.aircraftModel,
+    plannedPath: metadata?.plannedPath,
     points: points.filter(
       (_, index) => index % stride === 0 || index === points.length - 1,
     ),
@@ -199,6 +213,26 @@ export function calculateLogMetrics(
       }, 0) / Math.max(1, sampled.length);
   }
   const batteryUsed = Math.max(0, first.batteryPercent - last.batteryPercent);
+  const plannedDistanceKm =
+    plannedPath.length >= 2 ? polylineDistance(plannedPath) / 1000 : null;
+  const distanceErrorPercent =
+    plannedDistanceKm && plannedDistanceKm > 0.02
+      ? (Math.abs(distanceKm - plannedDistanceKm) / plannedDistanceKm) * 100
+      : null;
+  const targets = plannedPath.slice(1);
+  const waypointArrivalRate = targets.length
+    ? (targets.filter((target) =>
+        log.points.some((point) => haversineMeters(point, target) <= 20),
+      ).length /
+        targets.length) *
+      100
+    : null;
+  const profile = log.aircraftProfileId
+    ? getDroneProfile(log.aircraftProfileId)
+    : null;
+  const predictedBatteryUse = profile
+    ? (durationSec / 60 / profile.maxFlightTimeMin) * 100
+    : null;
   return {
     durationSec,
     distanceKm,
@@ -212,6 +246,13 @@ export function calculateLogMetrics(
     sampleCount: log.points.length,
     sampleRateHz: durationSec > 0 ? log.points.length / durationSec : 0,
     routeErrorM,
+    plannedDistanceKm,
+    distanceErrorPercent,
+    waypointArrivalRate,
+    batteryPredictionError:
+      predictedBatteryUse === null
+        ? null
+        : Math.abs(batteryUsed - predictedBatteryUse),
   };
 }
 

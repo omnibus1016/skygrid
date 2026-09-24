@@ -13,6 +13,9 @@ export interface DroneProfile {
   transmissionRangeKm: number;
   simulationTurnRateDps: number;
   batterySwapSec: number;
+  missionControl: 'waypoint' | 'pilot-guided';
+  missionControlLabel: string;
+  logSource: string;
   sourceUrl: string;
 }
 
@@ -32,6 +35,9 @@ export const DRONE_PROFILES: readonly DroneProfile[] = [
     transmissionRangeKm: 30,
     simulationTurnRateDps: 120,
     batterySwapSec: 45,
+    missionControl: 'pilot-guided',
+    missionControlLabel: '조종 앱 운용',
+    logSource: 'DJI Fly 비행기록',
     sourceUrl: 'https://store.dji.com/uk/product/dji-mavic-4-pro?vid=189291',
   },
   {
@@ -47,6 +53,9 @@ export const DRONE_PROFILES: readonly DroneProfile[] = [
     transmissionRangeKm: 20,
     simulationTurnRateDps: 130,
     batterySwapSec: 45,
+    missionControl: 'pilot-guided',
+    missionControlLabel: '조종 앱 운용',
+    logSource: 'DJI Fly 비행기록',
     sourceUrl: 'https://www.dji.com/air-3s/specs',
   },
   {
@@ -62,6 +71,9 @@ export const DRONE_PROFILES: readonly DroneProfile[] = [
     transmissionRangeKm: 20,
     simulationTurnRateDps: 140,
     batterySwapSec: 40,
+    missionControl: 'pilot-guided',
+    missionControlLabel: '조종 앱 운용',
+    logSource: 'DJI Fly 비행기록',
     sourceUrl: 'https://store.dji.com/uk/product/dji-mini-5-pro',
   },
   {
@@ -77,6 +89,9 @@ export const DRONE_PROFILES: readonly DroneProfile[] = [
     transmissionRangeKm: 7,
     simulationTurnRateDps: 120,
     batterySwapSec: 45,
+    missionControl: 'waypoint',
+    missionControlLabel: 'Litchi 웨이포인트 지원',
+    logSource: 'DJI GO 4 또는 Litchi 비행기록',
     sourceUrl: 'https://www.dji.com/mavic/info',
   },
   {
@@ -92,6 +107,9 @@ export const DRONE_PROFILES: readonly DroneProfile[] = [
     transmissionRangeKm: 13,
     simulationTurnRateDps: 180,
     batterySwapSec: 50,
+    missionControl: 'pilot-guided',
+    missionControlLabel: '웨이포인트 미지원 · 조종 유도',
+    logSource: 'DJI Fly 또는 DJI Assistant 2 기록',
     sourceUrl: 'https://www.dji.com/avata-2/specs',
   },
 ] as const;

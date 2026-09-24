@@ -20,12 +20,14 @@ import {
   Crosshair,
   Database,
   Download,
+  FileJson,
   FileChartColumn,
   Gauge,
   LocateFixed,
   List,
   Map as MapIcon,
   MapPinPlus,
+  Navigation,
   Pause,
   Play,
   RefreshCw,
@@ -72,13 +74,28 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatMissionTime } from '@/lib/skygrid/geo';
+import {
+  bearingDegrees,
+  formatMissionTime,
+  haversineMeters,
+} from '@/lib/skygrid/geo';
 import {
   DEFAULT_DRONE_PROFILE_ID,
   DRONE_PROFILES,
   getDroneProfile,
   profileSimulationValues,
 } from '@/lib/skygrid/drone-profiles';
+import {
+  buildExperimentProtocolCsv,
+  buildGuidanceCsv,
+  buildLitchiCsv,
+  buildMissionPlanFile,
+  parseMissionPlanFile,
+  plannedPathForDrone,
+  plannedPathFromPlan,
+  RESEARCH_FLEET_PROFILE_IDS,
+  type MissionPlanFile,
+} from '@/lib/skygrid/field-operations';
 import {
   calculateLogMetrics,
   createDemoLogs,
@@ -309,9 +326,16 @@ export default function SkygridApp() {
   const [interaction, setInteraction] = useState<
     'inspect' | 'add-base' | 'add-waypoint' | 'add-drone' | 'move-drone'
   >('inspect');
-  const [logs, setLogs] = useState<FlightLog[]>(() => createDemoLogs(mission));
-  const [selectedLogId, setSelectedLogId] = useState('DEMO-UAV-01');
+  const [logs, setLogs] = useState<FlightLog[]>([]);
+  const [selectedLogId, setSelectedLogId] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [fieldNotice, setFieldNotice] = useState('');
+  const [protocolOpen, setProtocolOpen] = useState(false);
+  const [logProfileId, setLogProfileId] =
+    useState<DroneProfileId>('dji-mavic-pro');
+  const [validationPlan, setValidationPlan] = useState<MissionPlanFile | null>(
+    null,
+  );
   const [batchResults, setBatchResults] = useState(() =>
     runBatchEvaluation(EVALUATION_CONFIG, policyBundle.policy, 48),
   );
@@ -342,6 +366,7 @@ export default function SkygridApp() {
   const [pendingDroneProfileId, setPendingDroneProfileId] =
     useState<DroneProfileId>(DEFAULT_DRONE_PROFILE_ID);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const planInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = readSavedPolicyBundle();
@@ -400,32 +425,42 @@ export default function SkygridApp() {
         altitude: Number(point.altitudeM.toFixed(1)),
       }));
   }, [selectedLog]);
+  const selectedRouteTarget = selectedDrone
+    ? mission.waypoints.find(
+        (waypoint) =>
+          waypoint.id === selectedDrone.route[selectedDrone.routeIndex],
+      )
+    : undefined;
+  const selectedRouteGuidance =
+    selectedDrone && selectedRouteTarget
+      ? {
+          distanceM: haversineMeters(selectedDrone, selectedRouteTarget),
+          bearing: bearingDegrees(selectedDrone, selectedRouteTarget),
+          dwellSec: selectedRouteTarget.dwellSec,
+        }
+      : null;
+  const selectedDroneProfile = selectedDrone
+    ? getDroneProfile(selectedDrone.profileId)
+    : null;
 
-  const candidateScores = useMemo(() => {
-    if (!selectedDrone) return [];
-    return mission.waypoints
-      .map((waypoint) => ({
-        waypoint,
-        score: plannerScore(
-          'rl',
-          selectedDrone,
+  const candidateScores = selectedDrone
+    ? mission.waypoints
+        .map((waypoint) => ({
           waypoint,
-          mission.time,
-          mission.waypoints.length,
-          policyBundle.policy,
-          mission.drones,
-          mission.waypoints,
-        ),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4);
-  }, [
-    mission.drones,
-    mission.waypoints,
-    mission.time,
-    selectedDrone,
-    policyBundle.policy,
-  ]);
+          score: plannerScore(
+            'rl',
+            selectedDrone,
+            waypoint,
+            mission.time,
+            mission.waypoints.length,
+            policyBundle.policy,
+            mission.drones,
+            mission.waypoints,
+          ),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 4)
+    : [];
 
   useEffect(() => {
     if (!mission.running) return;
@@ -457,6 +492,84 @@ export default function SkygridApp() {
     },
     [config, policyBundle.policy],
   );
+
+  const loadResearchFleet = useCallback(() => {
+    if (!mission.base.configured) {
+      setFieldNotice('지도에서 기지를 먼저 지정하십시오.');
+      return;
+    }
+    const drones = RESEARCH_FLEET_PROFILE_IDS.map((profileId, index) => {
+      const profile = getDroneProfile(profileId);
+      const performance = profileSimulationValues(profile);
+      const offset = (index - 0.5) * 0.00004;
+      return {
+        id: `UAV-${String(index + 1).padStart(2, '0')}`,
+        ...performance,
+        speedMps: index === 0 ? 6 : 5,
+        color: index === 0 ? '#67e8f9' : '#fbbf62',
+        lat: mission.base.lat + offset,
+        lng: mission.base.lng + offset * 0.7,
+        homeLat: mission.base.lat,
+        homeLng: mission.base.lng,
+        turnaroundRemainingSec: 0,
+        dwellRemainingSec: 0,
+        phase: 'base' as const,
+        sortieCount: 0,
+        minimumBattery: performance.maxBattery,
+        status: 'ready' as const,
+        route: [],
+        routeIndex: 0,
+        totalDistanceM: 0,
+        heading: 0,
+      };
+    });
+    setMission((current) => {
+      const planned = assignRoutes(
+        drones,
+        current.waypoints,
+        current.time,
+        config.planner,
+        policyBundle.policy,
+      );
+      return {
+        ...current,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+        events: [
+          {
+            id: `research-fleet-${Date.now()}`,
+            time: current.time,
+            kind: 'system' as const,
+            title: '실비행 기체 편성',
+            detail: 'DJI Mavic Pro · DJI Avata 2',
+          },
+          ...current.events,
+        ].slice(0, 18),
+      };
+    });
+    setConfig((current) => ({
+      ...current,
+      droneCount: 2,
+      failureDroneId: 'UAV-02',
+    }));
+    setSelectedDroneId('UAV-01');
+    setDropoutDroneId('UAV-02');
+    setFieldNotice('실비행 기체 2대를 기지에 배치했습니다.');
+  }, [config.planner, mission.base, policyBundle.policy]);
+
+  const resetFieldWorkspace = useCallback(() => {
+    const nextConfig = {
+      ...config,
+      droneCount: 0,
+      waypointCount: 0,
+      failureDroneId: 'UAV-02',
+      simRate: 1,
+    };
+    setConfig(nextConfig);
+    applyScenario(nextConfig);
+    setFieldNotice('현장 운용 지도를 초기화했습니다.');
+    setValidationPlan(null);
+  }, [applyScenario, config]);
 
   const clearScenario = useCallback(() => {
     setConfig(DEFAULT_CONFIG);
@@ -1166,11 +1279,29 @@ export default function SkygridApp() {
       if (!files.length) return;
       const parsed: FlightLog[] = [];
       const errors: string[] = [];
+      const profile = getDroneProfile(logProfileId);
+      const missionDrone = mission.drones.find(
+        (drone) => drone.profileId === logProfileId,
+      );
+      const plannedPath = validationPlan
+        ? plannedPathFromPlan(validationPlan, logProfileId)
+        : missionDrone
+          ? plannedPathForDrone(mission, missionDrone)
+          : [];
       for (let index = 0; index < files.length; index += 1) {
         try {
-          parsed.push(
-            parseFlightCsv(await files[index].text(), files[index].name, index),
+          const log = parseFlightCsv(
+            await files[index].text(),
+            files[index].name,
+            logs.length + index,
+            {
+              profileId: logProfileId,
+              aircraftModel: profile.model,
+              plannedPath,
+            },
           );
+          log.droneName = `${profile.model} · ${log.droneName}`;
+          parsed.push(log);
         } catch (error) {
           errors.push(
             `${files[index].name}: ${error instanceof Error ? error.message : '분석 실패'}`,
@@ -1178,7 +1309,7 @@ export default function SkygridApp() {
         }
       }
       if (parsed.length) {
-        setLogs(parsed);
+        setLogs((current) => [...current, ...parsed]);
         setSelectedLogId(parsed[0].id);
         setMission((current) => ({
           ...current,
@@ -1197,8 +1328,73 @@ export default function SkygridApp() {
       setUploadError(errors.join(' / '));
       event.target.value = '';
     },
+    [logProfileId, logs.length, mission, validationPlan],
+  );
+
+  const handlePlanFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const nextPlan = parseMissionPlanFile(await file.text());
+        setValidationPlan(nextPlan);
+        setUploadError('');
+      } catch (error) {
+        setUploadError(
+          error instanceof Error
+            ? error.message
+            : '시험계획을 읽지 못했습니다.',
+        );
+      }
+      event.target.value = '';
+    },
     [],
   );
+
+  const exportMissionPlan = useCallback(() => {
+    const plan = buildMissionPlanFile(mission, config);
+    downloadText(
+      `skygrid-test-plan-${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify(plan, null, 2),
+      'application/json;charset=utf-8',
+    );
+    setValidationPlan(plan);
+    setFieldNotice('시험계획 JSON을 저장했습니다.');
+  }, [config, mission]);
+
+  const exportSelectedRoute = (format: 'guidance' | 'litchi') => {
+    if (!selectedDrone) return;
+    try {
+      const content =
+        format === 'litchi'
+          ? buildLitchiCsv(mission, selectedDrone)
+          : buildGuidanceCsv(mission, selectedDrone);
+      downloadText(
+        `skygrid-${selectedDrone.id.toLowerCase()}-${format}.csv`,
+        content,
+      );
+      setFieldNotice(
+        format === 'litchi'
+          ? 'Litchi Mission Hub 가져오기용 CSV를 저장했습니다.'
+          : '조종 유도용 경로 CSV를 저장했습니다.',
+      );
+    } catch (error) {
+      setFieldNotice(
+        error instanceof Error ? error.message : '경로를 저장하지 못했습니다.',
+      );
+    }
+  };
+
+  const downloadLogTemplate = useCallback(() => {
+    downloadText(
+      'skygrid-flight-log-template.csv',
+      [
+        'time(millisecond),latitude,longitude,height_above_takeoff(meters),speed(m/s),zSpeed(m/s),battery_percent,satellites,compass_heading(degrees),flycState',
+        '0,36.3500000,127.8500000,30,0,0,100,18,0,GPS',
+        '1000,36.3500100,127.8500100,30,1.4,0,99.8,18,45,GPS',
+      ].join('\n'),
+    );
+  }, []);
 
   const trainAgain = useCallback(() => {
     setBusyAction('train');
@@ -1362,10 +1558,11 @@ export default function SkygridApp() {
   const changeMode = useCallback(
     (nextMode: AppMode) => {
       if (nextMode === mode) return;
-      if (nextMode === 'field') {
+      if (nextMode === 'field' && mode !== 'analysis') {
         const fieldConfig = {
           ...config,
-          droneCount: 2,
+          droneCount: 0,
+          waypointCount: 0,
           failureDroneId: 'UAV-02',
           simRate: 1,
         };
@@ -1382,18 +1579,24 @@ export default function SkygridApp() {
 
   const exportAnalysis = useCallback(() => {
     const rows = [
-      'log,duration_sec,distance_km,avg_speed_mps,max_altitude_m,battery_used_pct,battery_pct_per_km,samples',
+      'log,aircraft,duration_sec,distance_km,planned_distance_km,distance_error_pct,avg_speed_mps,max_altitude_m,battery_used_pct,battery_model_error_pct,waypoint_arrival_pct,route_error_m,battery_pct_per_km,samples',
     ];
     logs.forEach((log) => {
-      const result = calculateLogMetrics(log);
+      const result = calculateLogMetrics(log, log.plannedPath ?? []);
       rows.push(
         [
           log.droneName,
+          log.aircraftModel ?? '',
           result.durationSec.toFixed(1),
           result.distanceKm.toFixed(3),
+          result.plannedDistanceKm?.toFixed(3) ?? '',
+          result.distanceErrorPercent?.toFixed(1) ?? '',
           result.avgSpeedMps.toFixed(2),
           result.maxAltitudeM.toFixed(1),
           result.batteryUsed.toFixed(1),
+          result.batteryPredictionError?.toFixed(1) ?? '',
+          result.waypointArrivalRate?.toFixed(1) ?? '',
+          result.routeErrorM?.toFixed(1) ?? '',
           result.batteryPerKm.toFixed(2),
           result.sampleCount,
         ].join(','),
@@ -1514,6 +1717,13 @@ export default function SkygridApp() {
         multiple
         className="sr-only"
         onChange={handleFiles}
+      />
+      <input
+        ref={planInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="sr-only"
+        onChange={handlePlanFile}
       />
       <header className="mission-header">
         <div className="brand-lockup">
@@ -1792,13 +2002,41 @@ export default function SkygridApp() {
                       variant="outline"
                       size="icon"
                       className="icon-command"
-                      onClick={() => applyScenario()}
+                      onClick={resetFieldWorkspace}
                       aria-label="현장 임무 초기화"
-                      title="초기 시나리오로 기체와 정찰지점을 새로 생성"
+                      title="현장 운용 지도 초기화"
                     >
                       <RefreshCw />
                     </Button>
                   </div>
+                  <div className="button-stack mt-2">
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={loadResearchFleet}
+                      disabled={!mission.base.configured}
+                    >
+                      <Satellite /> Mavic Pro·Avata 2 배치
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => setProtocolOpen(true)}
+                    >
+                      <FileChartColumn /> 실비행 시험계획
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={exportMissionPlan}
+                      disabled={!missionReady}
+                    >
+                      <FileJson /> 시험계획 JSON 저장
+                    </Button>
+                  </div>
+                  {fieldNotice && (
+                    <div className="inline-notice">{fieldNotice}</div>
+                  )}
                 </div>
 
                 <DropoutControl
@@ -1852,6 +2090,39 @@ export default function SkygridApp() {
                           {droneOperationalLabel(selectedDrone)} ·{' '}
                           {selectedDrone.speedMps} m/s
                         </span>
+                        <span className="aircraft-capability">
+                          {selectedDroneProfile?.missionControlLabel}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="field-guidance-grid">
+                      <div>
+                        <span>다음 지점</span>
+                        <strong>{selectedRouteTarget?.id ?? '미배정'}</strong>
+                      </div>
+                      <div>
+                        <span>방위</span>
+                        <strong>
+                          {selectedRouteGuidance
+                            ? `${selectedRouteGuidance.bearing.toFixed(0)}°`
+                            : '—'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>거리</span>
+                        <strong>
+                          {selectedRouteGuidance
+                            ? `${selectedRouteGuidance.distanceM.toFixed(0)} m`
+                            : '—'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>정찰시간</span>
+                        <strong>
+                          {selectedRouteGuidance
+                            ? `${selectedRouteGuidance.dwellSec}초`
+                            : '—'}
+                        </strong>
                       </div>
                     </div>
                     <ParameterSlider
@@ -1870,6 +2141,24 @@ export default function SkygridApp() {
                     >
                       <BrainCircuit /> 경로 갱신
                     </Button>
+                    <div className="button-stack mt-2">
+                      {selectedDroneProfile?.missionControl === 'waypoint' && (
+                        <Button
+                          variant="outline"
+                          className="justify-start"
+                          onClick={() => exportSelectedRoute('litchi')}
+                        >
+                          <Download /> Litchi 임무 CSV
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        className="justify-start"
+                        onClick={() => exportSelectedRoute('guidance')}
+                      >
+                        <Navigation /> 조종 유도 CSV
+                      </Button>
+                    </div>
                     {selectedDrone.status === 'failed' && (
                       <Button
                         variant="outline"
@@ -1899,12 +2188,46 @@ export default function SkygridApp() {
                     <span>비행 로그</span>
                     <span>{logs.length}개 로그</span>
                   </div>
+                  <label
+                    className="control-label"
+                    htmlFor="log-aircraft-select"
+                  >
+                    로그 기체
+                  </label>
+                  <Select
+                    value={logProfileId}
+                    onValueChange={(value) =>
+                      setLogProfileId(value as DroneProfileId)
+                    }
+                  >
+                    <SelectTrigger
+                      id="log-aircraft-select"
+                      className="control-select"
+                    >
+                      <SelectValue>
+                        {getDroneProfile(logProfileId).model}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="dji-mavic-pro">
+                        DJI Mavic Pro
+                      </SelectItem>
+                      <SelectItem value="dji-avata-2">DJI Avata 2</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <div className="button-stack">
                     <Button
                       className="primary-command justify-start"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <Upload /> DJI CSV 불러오기
+                      <Upload /> 변환 CSV 불러오기
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => planInputRef.current?.click()}
+                    >
+                      <FileJson /> 시험계획 JSON 불러오기
                     </Button>
                     <Button
                       variant="outline"
@@ -1918,6 +2241,30 @@ export default function SkygridApp() {
                     >
                       <Sparkles /> 검증용 예제 데이터
                     </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={downloadLogTemplate}
+                    >
+                      <Download /> CSV 형식 예시
+                    </Button>
+                  </div>
+                  <div className="log-source-guide">
+                    <div>
+                      <strong>Mavic Pro</strong>
+                      <span>DJI GO 4·Litchi 기록 → AirData CSV</span>
+                    </div>
+                    <div>
+                      <strong>Avata 2</strong>
+                      <span>DJI Fly 기록 → AirData CSV</span>
+                    </div>
+                    <p>
+                      {validationPlan
+                        ? `시험계획 연결 · ${validationPlan.waypoints.length}개 지점`
+                        : missionReady
+                          ? `현재 현장 경로 연결 · ${mission.waypoints.length}개 지점`
+                          : '현장 임무에서 저장한 시험계획 JSON을 먼저 불러오십시오.'}
+                    </p>
                   </div>
                   {uploadError && (
                     <div className="error-notice">
@@ -1950,7 +2297,7 @@ export default function SkygridApp() {
                           <div>
                             <strong>{log.droneName}</strong>
                             <span>
-                              {result.sampleCount.toLocaleString()} samples ·{' '}
+                              {result.sampleCount.toLocaleString()} 표본 ·{' '}
                               {formatMissionTime(result.durationSec)}
                             </span>
                           </div>
@@ -2639,7 +2986,118 @@ export default function SkygridApp() {
           </aside>
         </section>
       )}
+      <ExperimentProtocolDialog
+        open={protocolOpen}
+        onOpenChange={setProtocolOpen}
+        onDownload={() =>
+          downloadText(
+            'skygrid-real-flight-protocol.csv',
+            buildExperimentProtocolCsv(),
+          )
+        }
+      />
     </main>
+  );
+}
+
+function ExperimentProtocolDialog({
+  open,
+  onOpenChange,
+  onDownload,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDownload: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="experiment-protocol-dialog">
+        <DialogHeader>
+          <DialogTitle>실비행 시험계획</DialogTitle>
+          <DialogDescription>
+            Mavic Pro·Avata 2 이기종 편대 · 논문 재현용 조건
+          </DialogDescription>
+        </DialogHeader>
+        <div className="protocol-summary-grid">
+          <div>
+            <span>임무시간</span>
+            <strong>10분</strong>
+          </div>
+          <div>
+            <span>기준고도</span>
+            <strong>30 m AGL</strong>
+          </div>
+          <div>
+            <span>이탈시점</span>
+            <strong>04:00</strong>
+          </div>
+          <div>
+            <span>착륙예비</span>
+            <strong>30%</strong>
+          </div>
+        </div>
+        <div className="protocol-block">
+          <div className="section-heading">
+            <span>1. 기체 보정</span>
+            <span>각 3회</span>
+          </div>
+          <p>
+            각 기체를 30 m 고도에서 100 m 왕복시키고 60초 체공한다. 순항 속도는
+            Mavic Pro 6 m/s, Avata 2 5 m/s로 고정해 거리당·시간당 배터리
+            소모율을 산출한다.
+          </p>
+        </div>
+        <div className="protocol-block">
+          <div className="section-heading">
+            <span>2. 비교 실험</span>
+            <span>5조건 × 3방식 × 2회</span>
+          </div>
+          <div className="protocol-scenario-table">
+            <div className="protocol-scenario-head">
+              <span>조건</span>
+              <span>이탈 기체</span>
+              <span>변수</span>
+            </div>
+            {[
+              ['EXP-01', 'Mavic Pro', '6지점·균일 중요도'],
+              ['EXP-02', 'Avata 2', '6지점·균일 중요도'],
+              ['EXP-03', 'Mavic Pro', '고중요도 재방문 120초'],
+              ['EXP-04', 'Avata 2', '지점 정찰시간 20초'],
+              ['EXP-05', 'Mavic Pro', '8지점·혼합 중요도'],
+            ].map((row) => (
+              <div key={row[0]} className="protocol-scenario-row">
+                <strong>{row[0]}</strong>
+                <span>{row[1]}</span>
+                <span>{row[2]}</span>
+              </div>
+            ))}
+          </div>
+          <p>
+            각 조건을 DQN·최근접·중요도 우선으로 각각 2회 수행하고 실행 순서를
+            무작위화한다. 이탈은 실제 고장이 아니라 지정 시점 착륙으로 재현하며,
+            나머지 기체는 재계획 경로를 이어간다.
+          </p>
+        </div>
+        <div className="protocol-block protocol-measures">
+          <div className="section-heading">
+            <span>3. 논문 측정값</span>
+          </div>
+          <p>
+            이탈 후 평균 연속성, 재방문 기한 준수율, 공백 회복시간, 지점 도달률,
+            경로 추종오차, 배터리 예측오차를 기록한다. 풍속·기온·앱 버전·초기
+            배터리·조종자를 함께 기록한다.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            닫기
+          </Button>
+          <Button onClick={onDownload}>
+            <Download /> 시험표 CSV
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -3421,11 +3879,35 @@ function AnalysisRail({
         </div>
         <div className="validation-score">
           <span>
-            {logs.length >= 2 ? '2-기체 로그 정합' : '추가 로그 필요'}
+            {metrics?.routeErrorM != null ? '계획경로 대조' : '시험계획 필요'}
           </span>
-          <strong>{logs.length >= 2 ? '검증 완료' : '대기'}</strong>
+          <strong>{metrics?.routeErrorM != null ? '계산 완료' : '대기'}</strong>
         </div>
         <dl className="analysis-data">
+          <div>
+            <dt>지점 도달률</dt>
+            <dd>
+              {metrics?.waypointArrivalRate === null || !metrics
+                ? '—'
+                : `${metrics.waypointArrivalRate.toFixed(0)} %`}
+            </dd>
+          </div>
+          <div>
+            <dt>비행거리 오차</dt>
+            <dd>
+              {metrics?.distanceErrorPercent === null || !metrics
+                ? '—'
+                : `${metrics.distanceErrorPercent.toFixed(1)} %`}
+            </dd>
+          </div>
+          <div>
+            <dt>배터리 예측 오차</dt>
+            <dd>
+              {metrics?.batteryPredictionError === null || !metrics
+                ? '—'
+                : `${metrics.batteryPredictionError.toFixed(1)} %p`}
+            </dd>
+          </div>
           <div>
             <dt>기체 이탈 추정</dt>
             <dd>

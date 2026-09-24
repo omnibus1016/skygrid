@@ -169,6 +169,8 @@ export interface FlightLog {
   droneName: string;
   color: string;
   points: FlightLogPoint[];
+  aircraftProfileId?: DroneProfileId;
+  aircraftModel?: string;
   plannedPath?: GeoPoint[];
 }
 
@@ -183,6 +185,10 @@ export interface LogMetrics {
   sampleCount: number;
   sampleRateHz: number;
   routeErrorM: number | null;
+  plannedDistanceKm: number | null;
+  distanceErrorPercent: number | null;
+  waypointArrivalRate: number | null;
+  batteryPredictionError: number | null;
 }
 
 export interface BatchResult {
