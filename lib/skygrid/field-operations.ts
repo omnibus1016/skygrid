@@ -26,6 +26,53 @@ export interface MissionPlanFile {
   >;
 }
 
+export interface FieldRouteSummary {
+  targetIds: string[];
+  distanceM: number;
+  estimatedSeconds: number;
+}
+
+function remainingTargets(mission: MissionState, drone: Drone) {
+  return drone.route
+    .slice(drone.routeIndex)
+    .map((id) => mission.waypoints.find((waypoint) => waypoint.id === id))
+    .filter(Boolean) as MissionState['waypoints'];
+}
+
+function routeStart(mission: MissionState, drone: Drone): GeoPoint {
+  if (drone.phase === 'base' || mission.time === 0) {
+    return { lat: mission.base.lat, lng: mission.base.lng };
+  }
+  return { lat: drone.lat, lng: drone.lng };
+}
+
+export function summarizeFieldRoute(
+  mission: MissionState,
+  drone: Drone,
+): FieldRouteSummary {
+  const targets = remainingTargets(mission, drone);
+  const points: GeoPoint[] = [
+    routeStart(mission, drone),
+    ...targets,
+    { lat: mission.base.lat, lng: mission.base.lng },
+  ];
+  const distanceM = points
+    .slice(1)
+    .reduce(
+      (sum, point, index) => sum + haversineMeters(points[index], point),
+      0,
+    );
+  const dwellSeconds = targets.reduce(
+    (sum, waypoint) => sum + waypoint.dwellSec,
+    0,
+  );
+  return {
+    targetIds: targets.map((waypoint) => waypoint.id),
+    distanceM,
+    estimatedSeconds: distanceM / Math.max(0.1, drone.speedMps) + dwellSeconds,
+  };
+}
+
 export function plannedPathForDrone(
   mission: Pick<MissionState, 'base' | 'waypoints'>,
   drone: Pick<Drone, 'route' | 'routeIndex' | 'lat' | 'lng'>,
@@ -34,7 +81,11 @@ export function plannedPathForDrone(
     .slice(drone.routeIndex)
     .map((id) => mission.waypoints.find((waypoint) => waypoint.id === id))
     .filter(Boolean) as GeoPoint[];
-  return [{ lat: drone.lat, lng: drone.lng }, ...targets];
+  return [
+    { lat: drone.lat, lng: drone.lng },
+    ...targets,
+    { lat: mission.base.lat, lng: mission.base.lng },
+  ];
 }
 
 export function buildMissionPlanFile(
@@ -81,7 +132,11 @@ export function plannedPathFromPlan(
   const points = drone.route
     .map((id) => plan.waypoints.find((waypoint) => waypoint.id === id))
     .filter(Boolean) as GeoPoint[];
-  return [{ lat: plan.base.lat, lng: plan.base.lng }, ...points];
+  return [
+    { lat: plan.base.lat, lng: plan.base.lng },
+    ...points,
+    { lat: plan.base.lat, lng: plan.base.lng },
+  ];
 }
 
 const LITCHI_HEADER = [
@@ -112,35 +167,38 @@ export function buildLitchiCsv(
   drone: Drone,
   altitudeM = 30,
 ): string {
-  const rows = drone.route
-    .slice(drone.routeIndex)
-    .map((id) => mission.waypoints.find((waypoint) => waypoint.id === id))
-    .filter(Boolean)
-    .map((waypoint) => {
-      const actions = [0, waypoint!.dwellSec * 1000];
-      while (actions.length < 30) actions.push(actions.length % 2 ? 0 : -1);
-      return [
-        waypoint!.lat.toFixed(7),
-        waypoint!.lng.toFixed(7),
-        altitudeM,
-        0,
-        0.2,
-        0,
-        0,
-        0,
-        ...actions,
-        0,
-        drone.speedMps.toFixed(1),
-        0,
-        0,
-        0,
-        0,
-        -1,
-        -1,
-      ].join(',');
-    });
-  if (rows.length < 2)
-    throw new Error('Litchi 임무에는 정찰지점이 2개 이상 필요합니다.');
+  if (!mission.base.configured)
+    throw new Error('Litchi 임무를 만들려면 기지를 먼저 지정해야 합니다.');
+  const targets = remainingTargets(mission, drone);
+  if (!targets.length) throw new Error('이 기체에 배정된 정찰지점이 없습니다.');
+  const route = [
+    { ...routeStart(mission, drone), dwellSec: 0 },
+    ...targets,
+    { lat: mission.base.lat, lng: mission.base.lng, dwellSec: 0 },
+  ];
+  const rows = route.map((waypoint) => {
+    const actions = waypoint.dwellSec ? [0, waypoint.dwellSec * 1000] : [-1, 0];
+    while (actions.length < 30) actions.push(actions.length % 2 ? 0 : -1);
+    return [
+      waypoint.lat.toFixed(7),
+      waypoint.lng.toFixed(7),
+      altitudeM,
+      0,
+      0.2,
+      0,
+      0,
+      0,
+      ...actions,
+      0,
+      drone.speedMps.toFixed(1),
+      0,
+      0,
+      0,
+      0,
+      -1,
+      -1,
+    ].join(',');
+  });
   return [LITCHI_HEADER.join(','), ...rows].join('\n');
 }
 
@@ -150,16 +208,31 @@ export function buildGuidanceCsv(
   altitudeM = 30,
 ): string {
   const header =
-    'sequence,point_id,latitude,longitude,altitude_m,speed_mps,dwell_sec,priority,revisit_sec,leg_distance_m,bearing_deg';
-  let previous: GeoPoint = { lat: mission.base.lat, lng: mission.base.lng };
-  const rows = drone.route
-    .slice(drone.routeIndex)
-    .map((id, index) => {
-      const waypoint = mission.waypoints.find((item) => item.id === id);
-      if (!waypoint) return null;
+    'sequence,point_id,point_type,latitude,longitude,altitude_m,speed_mps,dwell_sec,priority,revisit_sec,leg_distance_m,bearing_deg';
+  const start = routeStart(mission, drone);
+  let previous: GeoPoint = start;
+  const rows = [
+    [
+      0,
+      drone.phase === 'base' || mission.time === 0
+        ? mission.base.id
+        : 'CURRENT',
+      'START',
+      start.lat.toFixed(7),
+      start.lng.toFixed(7),
+      altitudeM,
+      drone.speedMps.toFixed(1),
+      0,
+      0,
+      0,
+      '0.0',
+      drone.heading.toFixed(1),
+    ].join(','),
+    ...remainingTargets(mission, drone).map((waypoint, index) => {
       const row = [
         index + 1,
         waypoint.id,
+        'TARGET',
         waypoint.lat.toFixed(7),
         waypoint.lng.toFixed(7),
         altitudeM,
@@ -172,8 +245,24 @@ export function buildGuidanceCsv(
       ].join(',');
       previous = waypoint;
       return row;
-    })
-    .filter(Boolean);
+    }),
+  ];
+  rows.push(
+    [
+      rows.length,
+      mission.base.id,
+      'RETURN',
+      mission.base.lat.toFixed(7),
+      mission.base.lng.toFixed(7),
+      altitudeM,
+      drone.speedMps.toFixed(1),
+      0,
+      0,
+      0,
+      haversineMeters(previous, mission.base).toFixed(1),
+      bearingDegrees(previous, mission.base).toFixed(1),
+    ].join(','),
+  );
   return [header, ...rows].join('\n');
 }
 

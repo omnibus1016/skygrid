@@ -20,8 +20,8 @@ import {
   Crosshair,
   Database,
   Download,
-  FileJson,
   FileChartColumn,
+  FileJson,
   Gauge,
   LocateFixed,
   List,
@@ -86,7 +86,6 @@ import {
   profileSimulationValues,
 } from '@/lib/skygrid/drone-profiles';
 import {
-  buildExperimentProtocolCsv,
   buildGuidanceCsv,
   buildLitchiCsv,
   buildMissionPlanFile,
@@ -94,6 +93,7 @@ import {
   plannedPathForDrone,
   plannedPathFromPlan,
   RESEARCH_FLEET_PROFILE_IDS,
+  summarizeFieldRoute,
   type MissionPlanFile,
 } from '@/lib/skygrid/field-operations';
 import {
@@ -330,7 +330,7 @@ export default function SkygridApp() {
   const [selectedLogId, setSelectedLogId] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [fieldNotice, setFieldNotice] = useState('');
-  const [protocolOpen, setProtocolOpen] = useState(false);
+  const [fieldPlanOpen, setFieldPlanOpen] = useState(false);
   const [logProfileId, setLogProfileId] =
     useState<DroneProfileId>('dji-mavic-pro');
   const [validationPlan, setValidationPlan] = useState<MissionPlanFile | null>(
@@ -694,6 +694,49 @@ export default function SkygridApp() {
     },
     [config.planner, policyBundle.policy],
   );
+
+  const createFieldFlightPlan = useCallback(() => {
+    if (!mission.base.configured) {
+      setFieldNotice('지도에서 기지를 먼저 지정하십시오.');
+      return;
+    }
+    if (!mission.waypoints.length) {
+      setFieldNotice('지도에 정찰지점을 추가하십시오.');
+      return;
+    }
+    if (!mission.drones.length) {
+      setFieldNotice('Mavic Pro와 Avata 2를 먼저 배치하십시오.');
+      return;
+    }
+    const start = performance.now();
+    const planned = assignRoutes(
+      mission.drones,
+      mission.waypoints,
+      mission.time,
+      'rl',
+      policyBundle.policy,
+    );
+    setMission({
+      ...mission,
+      drones: planned.drones,
+      waypoints: planned.waypoints,
+      replanCount: mission.replanCount + 1,
+      inferenceMs: Math.max(1, performance.now() - start),
+      events: [
+        {
+          id: `field-plan-${Date.now()}`,
+          time: mission.time,
+          kind: 'replan' as const,
+          title: '실비행 경로 생성 완료',
+          detail: `${mission.drones.length}대 · 정찰지점 ${mission.waypoints.length}개`,
+        },
+        ...mission.events,
+      ].slice(0, 18),
+    });
+    setConfig((current) => ({ ...current, planner: 'rl' }));
+    setFieldNotice('현재 지도 기준 실비행 경로를 생성했습니다.');
+    setFieldPlanOpen(true);
+  }, [mission, policyBundle.policy]);
 
   const executeDropout = useCallback(() => {
     if (!activeDropoutDroneId) return;
@@ -1362,17 +1405,15 @@ export default function SkygridApp() {
     setFieldNotice('시험계획 JSON을 저장했습니다.');
   }, [config, mission]);
 
-  const exportSelectedRoute = (format: 'guidance' | 'litchi') => {
-    if (!selectedDrone) return;
+  const exportDroneRoute = (droneId: string, format: 'guidance' | 'litchi') => {
+    const drone = mission.drones.find((item) => item.id === droneId);
+    if (!drone) return;
     try {
       const content =
         format === 'litchi'
-          ? buildLitchiCsv(mission, selectedDrone)
-          : buildGuidanceCsv(mission, selectedDrone);
-      downloadText(
-        `skygrid-${selectedDrone.id.toLowerCase()}-${format}.csv`,
-        content,
-      );
+          ? buildLitchiCsv(mission, drone)
+          : buildGuidanceCsv(mission, drone);
+      downloadText(`skygrid-${drone.id.toLowerCase()}-${format}.csv`, content);
       setFieldNotice(
         format === 'litchi'
           ? 'Litchi Mission Hub 가져오기용 CSV를 저장했습니다.'
@@ -2021,9 +2062,9 @@ export default function SkygridApp() {
                     <Button
                       variant="outline"
                       className="justify-start"
-                      onClick={() => setProtocolOpen(true)}
+                      onClick={createFieldFlightPlan}
                     >
-                      <FileChartColumn /> 실비행 시험계획
+                      <Route /> AI 실비행 계획 생성
                     </Button>
                     <Button
                       variant="outline"
@@ -2146,7 +2187,9 @@ export default function SkygridApp() {
                         <Button
                           variant="outline"
                           className="justify-start"
-                          onClick={() => exportSelectedRoute('litchi')}
+                          onClick={() =>
+                            exportDroneRoute(selectedDrone.id, 'litchi')
+                          }
                         >
                           <Download /> Litchi 임무 CSV
                         </Button>
@@ -2154,7 +2197,9 @@ export default function SkygridApp() {
                       <Button
                         variant="outline"
                         className="justify-start"
-                        onClick={() => exportSelectedRoute('guidance')}
+                        onClick={() =>
+                          exportDroneRoute(selectedDrone.id, 'guidance')
+                        }
                       >
                         <Navigation /> 조종 유도 CSV
                       </Button>
@@ -2986,114 +3031,128 @@ export default function SkygridApp() {
           </aside>
         </section>
       )}
-      <ExperimentProtocolDialog
-        open={protocolOpen}
-        onOpenChange={setProtocolOpen}
-        onDownload={() =>
-          downloadText(
-            'skygrid-real-flight-protocol.csv',
-            buildExperimentProtocolCsv(),
-          )
-        }
+      <FieldMissionPlanDialog
+        open={fieldPlanOpen}
+        onOpenChange={setFieldPlanOpen}
+        mission={mission}
+        onDownload={exportDroneRoute}
+        onShowRoute={(droneId) => {
+          setSelectedDroneId(droneId);
+          setSelectedMapEntity('drone');
+          setFieldPlanOpen(false);
+        }}
       />
     </main>
   );
 }
 
-function ExperimentProtocolDialog({
+function FieldMissionPlanDialog({
   open,
   onOpenChange,
+  mission,
   onDownload,
+  onShowRoute,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onDownload: () => void;
+  mission: MissionState;
+  onDownload: (droneId: string, format: 'guidance' | 'litchi') => void;
+  onShowRoute: (droneId: string) => void;
 }) {
+  const routes = mission.drones
+    .filter((drone) => drone.status !== 'failed')
+    .map((drone) => ({
+      drone,
+      profile: getDroneProfile(drone.profileId),
+      summary: summarizeFieldRoute(mission, drone),
+    }));
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="experiment-protocol-dialog">
+      <DialogContent className="field-plan-dialog">
         <DialogHeader>
-          <DialogTitle>실비행 시험계획</DialogTitle>
+          <DialogTitle>AI 실비행 계획</DialogTitle>
           <DialogDescription>
-            Mavic Pro·Avata 2 이기종 편대 · 논문 재현용 조건
+            현재 지도에 지정한 기지·정찰지점·기체로 산출한 경로
           </DialogDescription>
         </DialogHeader>
-        <div className="protocol-summary-grid">
+        <div className="field-plan-summary">
           <div>
-            <span>임무시간</span>
-            <strong>10분</strong>
+            <span>기지</span>
+            <strong>{mission.base.id}</strong>
           </div>
           <div>
-            <span>기준고도</span>
-            <strong>30 m AGL</strong>
+            <span>정찰지점</span>
+            <strong>{mission.waypoints.length}개</strong>
           </div>
           <div>
-            <span>이탈시점</span>
-            <strong>04:00</strong>
+            <span>운용 기체</span>
+            <strong>{routes.length}대</strong>
           </div>
           <div>
-            <span>착륙예비</span>
-            <strong>30%</strong>
+            <span>경로계획</span>
+            <strong>{PLANNER_LABEL.rl}</strong>
           </div>
         </div>
-        <div className="protocol-block">
-          <div className="section-heading">
-            <span>1. 기체 보정</span>
-            <span>각 3회</span>
-          </div>
-          <p>
-            각 기체를 30 m 고도에서 100 m 왕복시키고 60초 체공한다. 순항 속도는
-            Mavic Pro 6 m/s, Avata 2 5 m/s로 고정해 거리당·시간당 배터리
-            소모율을 산출한다.
-          </p>
-        </div>
-        <div className="protocol-block">
-          <div className="section-heading">
-            <span>2. 비교 실험</span>
-            <span>5조건 × 3방식 × 2회</span>
-          </div>
-          <div className="protocol-scenario-table">
-            <div className="protocol-scenario-head">
-              <span>조건</span>
-              <span>이탈 기체</span>
-              <span>변수</span>
-            </div>
-            {[
-              ['EXP-01', 'Mavic Pro', '6지점·균일 중요도'],
-              ['EXP-02', 'Avata 2', '6지점·균일 중요도'],
-              ['EXP-03', 'Mavic Pro', '고중요도 재방문 120초'],
-              ['EXP-04', 'Avata 2', '지점 정찰시간 20초'],
-              ['EXP-05', 'Mavic Pro', '8지점·혼합 중요도'],
-            ].map((row) => (
-              <div key={row[0]} className="protocol-scenario-row">
-                <strong>{row[0]}</strong>
-                <span>{row[1]}</span>
-                <span>{row[2]}</span>
+        <div className="field-route-list">
+          {routes.map(({ drone, profile, summary }) => (
+            <section className="field-route-card" key={drone.id}>
+              <div className="field-route-card-head">
+                <div>
+                  <i style={{ background: drone.color }} />
+                  <span>{drone.id}</span>
+                  <strong>{drone.model}</strong>
+                </div>
+                <b>
+                  {(summary.distanceM / 1000).toFixed(2)} km ·{' '}
+                  {Math.ceil(summary.estimatedSeconds / 60)}분
+                </b>
               </div>
-            ))}
-          </div>
-          <p>
-            각 조건을 DQN·최근접·중요도 우선으로 각각 2회 수행하고 실행 순서를
-            무작위화한다. 이탈은 실제 고장이 아니라 지정 시점 착륙으로 재현하며,
-            나머지 기체는 재계획 경로를 이어간다.
-          </p>
-        </div>
-        <div className="protocol-block protocol-measures">
-          <div className="section-heading">
-            <span>3. 논문 측정값</span>
-          </div>
-          <p>
-            이탈 후 평균 연속성, 재방문 기한 준수율, 공백 회복시간, 지점 도달률,
-            경로 추종오차, 배터리 예측오차를 기록한다. 풍속·기온·앱 버전·초기
-            배터리·조종자를 함께 기록한다.
-          </p>
+              <div className="field-route-sequence">
+                {[mission.base.id, ...summary.targetIds, mission.base.id].map(
+                  (pointId, index) => (
+                    <span key={`${drone.id}-${pointId}-${index}`}>
+                      {index > 0 && <i>→</i>}
+                      <b>{pointId}</b>
+                    </span>
+                  ),
+                )}
+              </div>
+              <div className="field-route-meta">
+                <span>정찰 {summary.targetIds.length}개 지점</span>
+                <span>{drone.speedMps.toFixed(1)} m/s</span>
+                <span>예비배터리 {drone.reserveBattery}%</span>
+              </div>
+              <div className="field-route-actions">
+                <Button variant="outline" onClick={() => onShowRoute(drone.id)}>
+                  <MapIcon /> 지도에서 경로 보기
+                </Button>
+                {profile.missionControl === 'waypoint' ? (
+                  <Button
+                    onClick={() => onDownload(drone.id, 'litchi')}
+                    disabled={!summary.targetIds.length}
+                  >
+                    <Download /> Litchi 임무 CSV
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => onDownload(drone.id, 'guidance')}
+                    disabled={!summary.targetIds.length}
+                  >
+                    <Navigation /> 조종 유도 CSV
+                  </Button>
+                )}
+              </div>
+              <div className="field-route-control">
+                {profile.missionControl === 'waypoint'
+                  ? 'Mavic Pro · Litchi Mission Hub로 가져오기'
+                  : 'Avata 2 · 지도 경로를 따라 조종'}
+              </div>
+            </section>
+          ))}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             닫기
-          </Button>
-          <Button onClick={onDownload}>
-            <Download /> 시험표 CSV
           </Button>
         </DialogFooter>
       </DialogContent>

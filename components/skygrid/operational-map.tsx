@@ -143,7 +143,8 @@ export default function OperationalMap({
           .slice(drone.routeIndex)
           .map((id) => mission.waypoints.find((waypoint) => waypoint.id === id))
           .filter(Boolean) as GeoPoint[];
-        const points = [drone, ...remaining];
+        if (!remaining.length) return [];
+        const points = [drone, ...remaining, mission.base];
         const line: GeoPoint[] = [];
         for (let i = 1; i < points.length; i += 1) {
           const segment = aStarRoute(

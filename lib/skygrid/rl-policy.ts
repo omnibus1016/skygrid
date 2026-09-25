@@ -613,6 +613,12 @@ function buildRoutePlan(
     }
   }
 
+  while (pending.length && virtual.length) {
+    const best = bestCandidate(virtual.map((_, index) => index));
+    if (!best) break;
+    assignCandidate(best.droneIndex, best.targetIndex);
+  }
+
   const routes = new Map(virtual.map((drone) => [drone.id, drone.route]));
   const assignment = new Map(
     waypointCopies.map((waypoint) => [waypoint.id, waypoint.assignedDrone]),
