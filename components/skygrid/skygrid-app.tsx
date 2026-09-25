@@ -119,6 +119,7 @@ import {
   cloneMissionState,
   createMission,
   missionMetrics,
+  reportFieldWaypointVisit,
   restoreDrone,
   runBatchEvaluation,
   runScenarioComparison,
@@ -1249,48 +1250,38 @@ export default function SkygridApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [deleteSelectedMapEntity, mode]);
 
-  const reportWaypointVisit = useCallback(() => {
-    if (!selectedWaypointId) return;
-    setMission((current) => {
-      const waypoints = current.waypoints.map((waypoint) =>
-        waypoint.id === selectedWaypointId
-          ? {
-              ...waypoint,
-              lastVisited: current.time,
-              visitedCount: waypoint.visitedCount + 1,
-            }
-          : waypoint,
-      );
-      const planned = assignRoutes(
-        current.drones,
-        waypoints,
-        current.time,
-        operationalPlanner,
+  const reportWaypointVisit = useCallback(
+    (waypointId = selectedWaypointId, droneId = selectedDroneId) => {
+      if (!waypointId || !droneId) {
+        setFieldNotice('기체와 정찰지점을 먼저 선택하십시오.');
+        return;
+      }
+      const result = reportFieldWaypointVisit(
+        mission,
+        droneId,
+        waypointId,
+        'rl',
         policyBundle.policy,
       );
-      return {
-        ...current,
-        drones: planned.drones,
-        waypoints: planned.waypoints,
-        replanCount: current.replanCount + 1,
-        events: [
-          {
-            id: `visit-report-${Date.now()}`,
-            time: current.time,
-            kind: 'visit' as const,
-            title: `${selectedWaypointId} 정찰 완료 보고`,
-            detail: `${selectedDroneId || '운용 기체'} 관측 결과 반영 · 후속 경로 갱신`,
-          },
-          ...current.events,
-        ].slice(0, 18),
-      };
-    });
-  }, [
-    selectedWaypointId,
-    selectedDroneId,
-    operationalPlanner,
-    policyBundle.policy,
-  ]);
+      if (!result) {
+        setFieldNotice('운용 가능한 기체와 정찰지점을 확인하십시오.');
+        return;
+      }
+      setMission(result.state);
+      if (result.nextWaypointId) {
+        setSelectedWaypointId(result.nextWaypointId);
+        setSelectedMapEntity('waypoint');
+        setFieldNotice(
+          `${result.completedWaypointId} 완료 · ${droneId} 다음 지점 ${result.nextWaypointId}`,
+        );
+      } else {
+        setFieldNotice(
+          `${result.completedWaypointId} 완료 · ${droneId} 기지 복귀`,
+        );
+      }
+    },
+    [mission, policyBundle.policy, selectedDroneId, selectedWaypointId],
+  );
 
   const updateWaypoint = useCallback(
     (patch: Partial<Waypoint>) => {
@@ -2112,20 +2103,11 @@ export default function SkygridApp() {
                   )}
                 </div>
 
-                <DropoutControl
-                  drones={mission.drones}
-                  droneId={activeDropoutDroneId}
-                  reason={dropoutReason}
-                  onDroneChange={setDropoutDroneId}
-                  onReasonChange={setDropoutReason}
-                  onExecute={executeDropout}
-                />
-
                 {selectedDrone && (
-                  <div className="rail-section">
+                  <div className="rail-section field-command-section">
                     <div className="section-heading">
-                      <span>기체 상태</span>
-                      <span>{mission.drones.length}대</span>
+                      <span>현재 이동 지시</span>
+                      <span>{selectedDrone.id}</span>
                     </div>
                     <div className="aircraft-selector">
                       {mission.drones.map((drone) => (
@@ -2135,7 +2117,17 @@ export default function SkygridApp() {
                           className={
                             drone.id === selectedDroneId ? 'active' : ''
                           }
-                          onClick={() => setSelectedDroneId(drone.id)}
+                          onClick={() => {
+                            setSelectedDroneId(drone.id);
+                            const nextId =
+                              drone.route[drone.routeIndex] ?? null;
+                            if (nextId) {
+                              setSelectedWaypointId(nextId);
+                              setSelectedMapEntity('waypoint');
+                            } else {
+                              setSelectedMapEntity('drone');
+                            }
+                          }}
                         >
                           <i style={{ background: drone.color }} />
                           <span>{drone.id}</span>
@@ -2146,27 +2138,6 @@ export default function SkygridApp() {
                           </b>
                         </button>
                       ))}
-                    </div>
-                    <div className="selected-aircraft">
-                      <span
-                        className="drone-dot"
-                        style={{
-                          color: selectedDrone.color,
-                          borderColor: selectedDrone.color,
-                        }}
-                      >
-                        <Satellite />
-                      </span>
-                      <div>
-                        <strong>{selectedDrone.model}</strong>
-                        <span>
-                          {droneOperationalLabel(selectedDrone)} ·{' '}
-                          {selectedDrone.speedMps} m/s
-                        </span>
-                        <span className="aircraft-capability">
-                          {selectedDroneProfile?.missionControlLabel}
-                        </span>
-                      </div>
                     </div>
                     <div className="field-guidance-grid">
                       <div>
@@ -2196,6 +2167,64 @@ export default function SkygridApp() {
                             ? `${selectedRouteGuidance.dwellSec}초`
                             : '—'}
                         </strong>
+                      </div>
+                    </div>
+                    <Button
+                      className="field-completion-command"
+                      onClick={() =>
+                        selectedRouteTarget &&
+                        reportWaypointVisit(
+                          selectedRouteTarget.id,
+                          selectedDrone.id,
+                        )
+                      }
+                      disabled={
+                        selectedDrone.status === 'failed' ||
+                        !selectedRouteTarget
+                      }
+                    >
+                      <CheckCircle2 />
+                      {selectedRouteTarget
+                        ? `${selectedRouteTarget.id} 도착·정찰 완료`
+                        : '배정된 다음 지점 없음'}
+                    </Button>
+                  </div>
+                )}
+
+                <DropoutControl
+                  drones={mission.drones}
+                  droneId={activeDropoutDroneId}
+                  reason={dropoutReason}
+                  onDroneChange={setDropoutDroneId}
+                  onReasonChange={setDropoutReason}
+                  onExecute={executeDropout}
+                />
+
+                {selectedDrone && (
+                  <div className="rail-section">
+                    <div className="section-heading">
+                      <span>선택 기체</span>
+                      <span>{selectedDrone.id}</span>
+                    </div>
+                    <div className="selected-aircraft">
+                      <span
+                        className="drone-dot"
+                        style={{
+                          color: selectedDrone.color,
+                          borderColor: selectedDrone.color,
+                        }}
+                      >
+                        <Satellite />
+                      </span>
+                      <div>
+                        <strong>{selectedDrone.model}</strong>
+                        <span>
+                          {droneOperationalLabel(selectedDrone)} ·{' '}
+                          {selectedDrone.speedMps} m/s
+                        </span>
+                        <span className="aircraft-capability">
+                          {selectedDroneProfile?.missionControlLabel}
+                        </span>
                       </div>
                     </div>
                     <ParameterSlider
@@ -2252,7 +2281,16 @@ export default function SkygridApp() {
                   selected={selectedWaypoint}
                   onChange={updateWaypoint}
                   onDelete={deleteSelectedWaypoint}
-                  onVisit={reportWaypointVisit}
+                  onVisit={() =>
+                    selectedWaypoint &&
+                    reportWaypointVisit(
+                      selectedWaypoint.id,
+                      selectedDrone?.id ?? '',
+                    )
+                  }
+                  visitDisabled={
+                    !selectedDrone || selectedDrone.status === 'failed'
+                  }
                   onReplan={() => replanNow()}
                 />
               </>
@@ -2548,7 +2586,16 @@ export default function SkygridApp() {
               onMapContextMenu={handleMapContextMenu}
               onSelectDrone={(droneId) => {
                 setSelectedDroneId(droneId);
-                setSelectedMapEntity('drone');
+                const drone = mission.drones.find(
+                  (candidate) => candidate.id === droneId,
+                );
+                const nextId = drone?.route[drone.routeIndex] ?? null;
+                if (nextId) {
+                  setSelectedWaypointId(nextId);
+                  setSelectedMapEntity('waypoint');
+                } else {
+                  setSelectedMapEntity('drone');
+                }
               }}
               onSelectWaypoint={(waypointId) => {
                 setSelectedWaypointId(waypointId);
@@ -3618,12 +3665,14 @@ function WaypointEditor({
   onChange,
   onDelete,
   onVisit,
+  visitDisabled = false,
   onReplan,
 }: {
   selected?: Waypoint;
   onChange: (patch: Partial<Waypoint>) => void;
   onDelete: () => void;
   onVisit?: () => void;
+  visitDisabled?: boolean;
   onReplan: () => void;
 }) {
   if (!selected) return null;
@@ -3672,8 +3721,8 @@ function WaypointEditor({
       </dl>
       <div className="waypoint-actions">
         {onVisit && (
-          <Button className="h-9" onClick={onVisit}>
-            <CheckCircle2 /> 정찰 완료 보고
+          <Button className="h-9" onClick={onVisit} disabled={visitDisabled}>
+            <CheckCircle2 /> {selected.id} 완료 처리
           </Button>
         )}
         <Button variant="outline" className="h-9" onClick={onReplan}>

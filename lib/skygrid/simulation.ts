@@ -1,4 +1,9 @@
-import { haversineMeters, moveToward, polylineDistance } from './geo';
+import {
+  bearingDegrees,
+  haversineMeters,
+  moveToward,
+  polylineDistance,
+} from './geo';
 import {
   DEFAULT_DRONE_PROFILE_ID,
   getDroneProfile,
@@ -361,6 +366,134 @@ export function advanceFieldMission(
       state.failureTime === null
         ? state.minimumPostFailureContinuity
         : Math.min(state.minimumPostFailureContinuity, continuity),
+  };
+}
+
+export interface FieldVisitResult {
+  state: MissionState;
+  completedWaypointId: string;
+  nextWaypointId: string | null;
+  distanceM: number;
+  batteryUsed: number;
+}
+
+/**
+ * Applies one operator-confirmed field visit. The report means the aircraft is
+ * already at the selected point, so the digital marker, energy estimate and
+ * next route are updated as one atomic field-state transition.
+ */
+export function reportFieldWaypointVisit(
+  state: MissionState,
+  droneId: string,
+  waypointId: string,
+  planner: PlannerKind,
+  policy: CandidateDqn,
+): FieldVisitResult | null {
+  const drone = state.drones.find(
+    (candidate) => candidate.id === droneId && candidate.status !== 'failed',
+  );
+  const waypoint = state.waypoints.find(
+    (candidate) => candidate.id === waypointId,
+  );
+  if (!drone || !waypoint) return null;
+
+  const distanceM = haversineMeters(drone, waypoint);
+  const batteryUsed =
+    (distanceM / 1_000) * drone.consumptionPerKm +
+    (waypoint.dwellSec / 60) * drone.loiterConsumptionPerMin;
+  const battery = Math.max(0, drone.battery - batteryUsed);
+  const age = Math.max(0, state.time - waypoint.lastVisited);
+  const onTime = age <= waypoint.revisitSec;
+
+  const visitedWaypoints = state.waypoints.map((candidate) =>
+    candidate.id === waypointId
+      ? {
+          ...candidate,
+          lastVisited: state.time,
+          visitedCount: candidate.visitedCount + 1,
+          assignedDrone: undefined,
+        }
+      : { ...candidate, assignedDrone: undefined },
+  );
+  const positionedDrones = state.drones.map((candidate) =>
+    candidate.id === droneId
+      ? {
+          ...candidate,
+          lat: waypoint.lat,
+          lng: waypoint.lng,
+          heading: bearingDegrees(candidate, waypoint),
+          battery,
+          minimumBattery: Math.min(candidate.minimumBattery, battery),
+          totalDistanceM: candidate.totalDistanceM + distanceM,
+          dwellRemainingSec: 0,
+          turnaroundRemainingSec: 0,
+          status: 'active' as const,
+          phase: 'transit' as const,
+          route: [],
+          routeIndex: 0,
+          sortieCount: Math.max(1, candidate.sortieCount),
+        }
+      : candidate,
+  );
+  const planningWaypoints = visitedWaypoints.filter(
+    (candidate) => candidate.id !== waypointId,
+  );
+  const planned = assignRoutes(
+    positionedDrones,
+    planningWaypoints,
+    state.time,
+    planner,
+    policy,
+  );
+  const plannedWaypointById = new Map(
+    planned.waypoints.map((candidate) => [candidate.id, candidate]),
+  );
+  const waypoints = visitedWaypoints.map(
+    (candidate) => plannedWaypointById.get(candidate.id) ?? candidate,
+  );
+  const plannedDrone = planned.drones.find(
+    (candidate) => candidate.id === droneId,
+  );
+  const nextWaypointId = plannedDrone?.route[plannedDrone.routeIndex] ?? null;
+  const drones = planned.drones.map((candidate) => {
+    if (candidate.id !== droneId || nextWaypointId) return candidate;
+    const atBase =
+      haversineMeters(candidate, {
+        lat: candidate.homeLat,
+        lng: candidate.homeLng,
+      }) < 5;
+    return {
+      ...candidate,
+      status: atBase ? ('ready' as const) : ('returning' as const),
+      phase: atBase ? ('base' as const) : ('return' as const),
+    };
+  });
+  const detail = nextWaypointId
+    ? `${droneId} 위치·배터리 반영 · 다음 ${nextWaypointId}`
+    : `${droneId} 위치·배터리 반영 · 기지 복귀`;
+
+  return {
+    completedWaypointId: waypointId,
+    nextWaypointId,
+    distanceM,
+    batteryUsed,
+    state: {
+      ...state,
+      drones,
+      waypoints,
+      revisitChecks: state.revisitChecks + 1,
+      onTimeRevisits: state.onTimeRevisits + (onTime ? 1 : 0),
+      replanCount: state.replanCount + 1,
+      events: [
+        makeEvent(
+          state.time,
+          'visit',
+          `${waypointId} 정찰 완료`,
+          detail,
+        ),
+        ...state.events,
+      ].slice(0, 18),
+    },
   };
 }
 
