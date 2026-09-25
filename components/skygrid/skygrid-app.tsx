@@ -95,6 +95,7 @@ import {
   RESEARCH_FLEET_PROFILE_IDS,
   summarizeFieldRoute,
   type MissionPlanFile,
+  type MissionPolicyMetadata,
 } from '@/lib/skygrid/field-operations';
 import {
   calculateLogMetrics,
@@ -165,7 +166,7 @@ const EVALUATION_CONFIG: ScenarioConfig = {
 };
 
 const PLANNER_LABEL: Record<PlannerKind, string> = {
-  rl: '물리 제약 결합 DQN',
+  rl: '제약 인지 잔차 DQN',
   nearest: '최근접 우선',
   priority: '중요도 우선',
 };
@@ -186,7 +187,7 @@ type PolicyBundle = {
   trainedAt: string | null;
 };
 
-const POLICY_STORAGE_KEY = 'skygrid-policy-v3';
+const POLICY_STORAGE_KEY = 'skygrid-policy-v4';
 
 function createPretrainedPolicyBundle(): PolicyBundle {
   const policy = CandidateDqn.fromWeights(PRETRAINED_POLICY_WEIGHTS);
@@ -315,6 +316,8 @@ export default function SkygridApp() {
   const policyStats = policyBundle.stats;
   const [mode, setMode] = useState<AppMode>('simulation');
   const [config, setConfig] = useState<ScenarioConfig>(DEFAULT_CONFIG);
+  const operationalPlanner: PlannerKind =
+    mode === 'field' ? 'rl' : config.planner;
   const [mission, setMission] = useState(() =>
     createMission(DEFAULT_CONFIG, policyBundle.policy),
   );
@@ -528,7 +531,7 @@ export default function SkygridApp() {
         drones,
         current.waypoints,
         current.time,
-        config.planner,
+        operationalPlanner,
         policyBundle.policy,
       );
       return {
@@ -555,7 +558,7 @@ export default function SkygridApp() {
     setSelectedDroneId('UAV-01');
     setDropoutDroneId('UAV-02');
     setFieldNotice('실비행 기체 2대를 기지에 배치했습니다.');
-  }, [config.planner, mission.base, policyBundle.policy]);
+  }, [mission.base, operationalPlanner, policyBundle.policy]);
 
   const resetFieldWorkspace = useCallback(() => {
     const nextConfig = {
@@ -663,7 +666,7 @@ export default function SkygridApp() {
   ]);
 
   const replanNow = useCallback(
-    (planner = config.planner) => {
+    (planner = operationalPlanner) => {
       const start = performance.now();
       setMission((current) => {
         const planned = assignRoutes(
@@ -692,7 +695,7 @@ export default function SkygridApp() {
         };
       });
     },
-    [config.planner, policyBundle.policy],
+    [operationalPlanner, policyBundle.policy],
   );
 
   const createFieldFlightPlan = useCallback(() => {
@@ -744,7 +747,7 @@ export default function SkygridApp() {
       triggerFailure(
         current,
         activeDropoutDroneId,
-        config.planner,
+        operationalPlanner,
         policyBundle.policy,
         dropoutReason,
       ),
@@ -753,7 +756,7 @@ export default function SkygridApp() {
   }, [
     activeDropoutDroneId,
     dropoutReason,
-    config.planner,
+    operationalPlanner,
     policyBundle.policy,
   ]);
 
@@ -763,11 +766,11 @@ export default function SkygridApp() {
       restoreDrone(
         current,
         selectedDroneId,
-        config.planner,
+        operationalPlanner,
         policyBundle.policy,
       ),
     );
-  }, [selectedDroneId, config.planner, policyBundle.policy]);
+  }, [selectedDroneId, operationalPlanner, policyBundle.policy]);
 
   const toggleMission = useCallback(() => {
     if (!mission.running && !missionReady) return;
@@ -863,7 +866,7 @@ export default function SkygridApp() {
           current.drones,
           waypoints,
           current.time,
-          config.planner,
+          operationalPlanner,
           policyBundle.policy,
         );
         return {
@@ -886,7 +889,7 @@ export default function SkygridApp() {
       setInteraction('inspect');
       setMapContextMenu(null);
     },
-    [mission.waypoints, config.planner, policyBundle.policy],
+    [mission.waypoints, operationalPlanner, policyBundle.policy],
   );
 
   const addDroneAt = useCallback(
@@ -933,7 +936,7 @@ export default function SkygridApp() {
           drones,
           current.waypoints,
           current.time,
-          config.planner,
+          operationalPlanner,
           policyBundle.policy,
         );
         return {
@@ -957,7 +960,7 @@ export default function SkygridApp() {
       setMapContextMenu(null);
       setPendingDronePoint(null);
     },
-    [mission.drones, mission.base, config.planner, policyBundle.policy],
+    [mission.drones, mission.base, operationalPlanner, policyBundle.policy],
   );
 
   const requestDronePlacement = useCallback((point: GeoPoint) => {
@@ -990,7 +993,7 @@ export default function SkygridApp() {
           drones,
           current.waypoints,
           current.time,
-          config.planner,
+          operationalPlanner,
           policyBundle.policy,
         );
         return {
@@ -1014,7 +1017,7 @@ export default function SkygridApp() {
       setInteraction('inspect');
       setMapContextMenu(null);
     },
-    [config.planner, policyBundle.policy],
+    [operationalPlanner, policyBundle.policy],
   );
 
   const handleMapClick = useCallback(
@@ -1052,7 +1055,7 @@ export default function SkygridApp() {
             drones,
             current.waypoints,
             current.time,
-            config.planner,
+            operationalPlanner,
             policyBundle.policy,
           );
           return {
@@ -1082,7 +1085,7 @@ export default function SkygridApp() {
       addWaypointAt,
       requestDronePlacement,
       setBaseAt,
-      config.planner,
+      operationalPlanner,
       policyBundle.policy,
     ],
   );
@@ -1107,7 +1110,7 @@ export default function SkygridApp() {
           current.drones,
           waypoints,
           current.time,
-          config.planner,
+          operationalPlanner,
           policyBundle.policy,
         );
         return {
@@ -1130,7 +1133,7 @@ export default function SkygridApp() {
       });
       setMapContextMenu(null);
     },
-    [mission.waypoints, config.planner, policyBundle.policy],
+    [mission.waypoints, operationalPlanner, policyBundle.policy],
   );
 
   const deleteSelectedWaypoint = useCallback(() => {
@@ -1161,7 +1164,7 @@ export default function SkygridApp() {
           drones,
           waypoints,
           current.time,
-          config.planner,
+          operationalPlanner,
           policyBundle.policy,
         );
         return {
@@ -1184,7 +1187,7 @@ export default function SkygridApp() {
       });
       setMapContextMenu(null);
     },
-    [mission.drones, config.planner, policyBundle.policy],
+    [mission.drones, operationalPlanner, policyBundle.policy],
   );
 
   const handleMapContextMenu = useCallback(
@@ -1262,7 +1265,7 @@ export default function SkygridApp() {
         current.drones,
         waypoints,
         current.time,
-        config.planner,
+        operationalPlanner,
         policyBundle.policy,
       );
       return {
@@ -1285,7 +1288,7 @@ export default function SkygridApp() {
   }, [
     selectedWaypointId,
     selectedDroneId,
-    config.planner,
+    operationalPlanner,
     policyBundle.policy,
   ]);
 
@@ -1395,7 +1398,29 @@ export default function SkygridApp() {
   );
 
   const exportMissionPlan = useCallback(() => {
-    const plan = buildMissionPlanFile(mission, config);
+    const validation = policyBundle.stats.validation;
+    const policyMetadata: MissionPolicyMetadata = {
+      planner: 'rl',
+      modelName: PLANNER_LABEL.rl,
+      modelVersion: policyBundle.stats.modelVersion ?? null,
+      episodes: policyBundle.stats.episodes,
+      origin: policyBundle.origin,
+      trainedAt: policyBundle.trainedAt,
+      validation: validation
+        ? {
+            scenarios: validation.scenarios,
+            rlScore: validation.rlScore,
+            nearestScore: validation.nearestScore,
+            priorityScore: validation.priorityScore,
+            improvementVsBest: validation.improvementVsBest,
+          }
+        : null,
+    };
+    const plan = buildMissionPlanFile(
+      mission,
+      { ...config, planner: 'rl' },
+      policyMetadata,
+    );
     downloadText(
       `skygrid-test-plan-${new Date().toISOString().slice(0, 10)}.json`,
       JSON.stringify(plan, null, 2),
@@ -1403,7 +1428,7 @@ export default function SkygridApp() {
     );
     setValidationPlan(plan);
     setFieldNotice('시험계획 JSON을 저장했습니다.');
-  }, [config, mission]);
+  }, [config, mission, policyBundle]);
 
   const exportDroneRoute = (droneId: string, format: 'guidance' | 'litchi') => {
     const drone = mission.drones.find((item) => item.id === droneId);
@@ -1485,14 +1510,16 @@ export default function SkygridApp() {
           setTrainingProgress(100);
           setTrainingStage('검증 통과');
           setTrainingNotice(
-            `검증 ${validation.scenarios}개 · 기준 대비 +${validation.improvementVsBest.toFixed(1)}점 · 새 모델 적용`,
+            validation.improvementVsBest >= 0
+              ? `검증 ${validation.scenarios}개 · 기준 대비 +${validation.improvementVsBest.toFixed(1)}점 · 새 모델 적용`
+              : `검증 ${validation.scenarios}개 · 비열등 한계 내 ${validation.improvementVsBest.toFixed(1)}점 · 새 모델 적용`,
           );
           setMission((current) => {
             const planned = assignRoutes(
               current.drones,
               current.waypoints,
               current.time,
-              config.planner,
+              operationalPlanner,
               next.policy,
             );
             return {
@@ -1524,7 +1551,7 @@ export default function SkygridApp() {
       })();
     }, 40);
   }, [
-    config.planner,
+    operationalPlanner,
     config.randomSeed,
     config.durationSec,
     config.failureAt,
@@ -1542,7 +1569,7 @@ export default function SkygridApp() {
         current.drones,
         current.waypoints,
         current.time,
-        config.planner,
+        operationalPlanner,
         next.policy,
       );
       return {
@@ -1562,7 +1589,7 @@ export default function SkygridApp() {
         ].slice(0, 18),
       };
     });
-  }, [config.planner]);
+  }, [operationalPlanner]);
 
   const runBatch = useCallback(() => {
     setBusyAction('batch');
@@ -1606,6 +1633,7 @@ export default function SkygridApp() {
           waypointCount: 0,
           failureDroneId: 'UAV-02',
           simRate: 1,
+          planner: 'rl' as const,
         };
         setConfig(fieldConfig);
         applyScenario(fieldConfig);
@@ -1735,11 +1763,15 @@ export default function SkygridApp() {
               triggerFailure(
                 current,
                 droneId,
-                config.planner,
+                operationalPlanner,
                 policyBundle.policy,
               ),
             );
-            return { status: 'replanned', droneId, planner: config.planner };
+            return {
+              status: 'replanned',
+              droneId,
+              planner: operationalPlanner,
+            };
           },
         },
         { signal: lifecycle.signal },
@@ -1747,7 +1779,7 @@ export default function SkygridApp() {
     };
     void register().catch(() => undefined);
     return () => lifecycle.abort();
-  }, [applyScenario, config, policyBundle.policy]);
+  }, [applyScenario, config, operationalPlanner, policyBundle.policy]);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -2000,7 +2032,7 @@ export default function SkygridApp() {
                       <SelectValue>{PLANNER_LABEL[config.planner]}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="rl">물리 제약 결합 DQN</SelectItem>
+                      <SelectItem value="rl">제약 인지 잔차 DQN</SelectItem>
                       <SelectItem value="nearest">최근접 우선</SelectItem>
                       <SelectItem value="priority">중요도 우선</SelectItem>
                     </SelectContent>
@@ -2305,7 +2337,9 @@ export default function SkygridApp() {
                     </div>
                     <p>
                       {validationPlan
-                        ? `시험계획 연결 · ${validationPlan.waypoints.length}개 지점`
+                        ? validationPlan.policy
+                          ? `AI v${validationPlan.policy.modelVersion ?? '-'} 계획 연결 · ${validationPlan.waypoints.length}개 지점`
+                          : `시험계획 연결 · ${validationPlan.waypoints.length}개 지점`
                         : missionReady
                           ? `현재 현장 경로 연결 · ${mission.waypoints.length}개 지점`
                           : '현장 임무에서 저장한 시험계획 JSON을 먼저 불러오십시오.'}
@@ -2817,6 +2851,7 @@ export default function SkygridApp() {
                 selectedLog={selectedLog}
                 handoverSeconds={handoverSeconds}
                 flightSeries={flightSeries}
+                validationPlan={validationPlan}
               />
             ) : (
               <>
@@ -2928,7 +2963,7 @@ export default function SkygridApp() {
                   </div>
                   <div className="current-model-summary">
                     <div>
-                      <strong>물리 제약 결합 DQN</strong>
+                      <strong>제약 인지 잔차 DQN</strong>
                       <span>
                         {policyBundle.origin === 'pretrained'
                           ? '기본 사전학습 모델'
@@ -3209,7 +3244,7 @@ function TrainingWorkspace({
           <div className="workspace-card-header">
             <div>
               <span className="workspace-label">현재 정책</span>
-              <h2>중앙집중형 물리 제약 결합 DQN</h2>
+              <h2>중앙집중형 제약 인지 잔차 DQN</h2>
             </div>
             <Badge variant="outline">
               {policyBundle.origin === 'custom' ? '사용자 모델' : '기본 모델'}
@@ -3285,17 +3320,35 @@ function TrainingWorkspace({
                 <span>탐색률</span>
                 <strong>{(stats.epsilon * 100).toFixed(1)}%</strong>
               </div>
-              {stats.validation && (
+              {(stats.operationalValidation || stats.validation) && (
                 <>
                   <div>
-                    <span>검증 점수</span>
-                    <strong>{stats.validation.rlScore.toFixed(1)}</strong>
+                    <span>
+                      {stats.operationalValidation
+                        ? '임무 연속성'
+                        : '검증 점수'}
+                    </span>
+                    <strong>
+                      {stats.operationalValidation
+                        ? `${stats.operationalValidation.rlContinuity.toFixed(1)}%`
+                        : stats.validation?.rlScore.toFixed(1)}
+                    </strong>
                   </div>
                   <div>
-                    <span>기준 대비</span>
+                    <span>
+                      {stats.operationalValidation
+                        ? '최근접 대비'
+                        : '기준 대비'}
+                    </span>
                     <strong>
-                      {stats.validation.improvementVsBest >= 0 ? '+' : ''}
-                      {stats.validation.improvementVsBest.toFixed(1)}
+                      {stats.operationalValidation
+                        ? `${stats.operationalValidation.rlContinuity - stats.operationalValidation.nearestContinuity >= 0 ? '+' : ''}${(
+                            stats.operationalValidation.rlContinuity -
+                            stats.operationalValidation.nearestContinuity
+                          ).toFixed(1)}%p`
+                        : `${(stats.validation?.improvementVsBest ?? 0) >= 0 ? '+' : ''}${(
+                            stats.validation?.improvementVsBest ?? 0
+                          ).toFixed(1)}`}
                     </strong>
                   </div>
                 </>
@@ -3785,6 +3838,7 @@ function AnalysisRail({
   selectedLog,
   handoverSeconds,
   flightSeries,
+  validationPlan,
 }: {
   metrics: ReturnType<typeof calculateLogMetrics> | null;
   logs: FlightLog[];
@@ -3796,13 +3850,20 @@ function AnalysisRail({
     battery: number;
     altitude: number;
   }[];
+  validationPlan: MissionPlanFile | null;
 }) {
   return (
     <>
       <div className="rail-section">
         <div className="section-heading">
           <span>비행 요약</span>
-          <span>{selectedLog ? '데이터 확인' : '데이터 없음'}</span>
+          <span>
+            {validationPlan?.policy
+              ? `AI v${validationPlan.policy.modelVersion ?? '-'} 계획 검증`
+              : selectedLog
+                ? '데이터 확인'
+                : '데이터 없음'}
+          </span>
         </div>
         {metrics ? (
           <>

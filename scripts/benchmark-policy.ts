@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
-import { CandidateDqn } from '../lib/skygrid/rl-policy';
+import { CandidateDqn, type PolicyWeights } from '../lib/skygrid/rl-policy';
+import { PRETRAINED_POLICY_WEIGHTS } from '../lib/skygrid/pretrained-policy';
 import {
   createMission,
   runBatchEvaluation,
@@ -9,11 +10,23 @@ import {
 import type { PlannerKind, ScenarioConfig } from '../lib/skygrid/types';
 
 const modelPath = process.argv[2];
-if (!modelPath) throw new Error('모델 JSON 경로가 필요합니다.');
-const saved = JSON.parse(readFileSync(modelPath, 'utf8')) as {
-  weights?: unknown;
+const sourceWeights: PolicyWeights = modelPath
+  ? (
+      JSON.parse(readFileSync(modelPath, 'utf8')) as {
+        weights: PolicyWeights;
+      }
+    ).weights
+  : PRETRAINED_POLICY_WEIGHTS;
+const networkScale = Number(process.argv[4] ?? 1);
+const weights = {
+  ...sourceWeights,
+  version: 4 as const,
+  w1: sourceWeights.w1.map((row) => [...row]),
+  b1: [...sourceWeights.b1],
+  w2: sourceWeights.w2.map((weight) => weight * networkScale),
+  b2: sourceWeights.b2 * networkScale,
 };
-const policy = CandidateDqn.fromWeights(saved.weights);
+const policy = CandidateDqn.fromWeights(weights);
 if (!policy) throw new Error('모델 가중치를 읽지 못했습니다.');
 
 const config: ScenarioConfig = {
@@ -25,7 +38,7 @@ const config: ScenarioConfig = {
   planner: 'rl',
   simRate: 4,
   sensorRadiusM: 110,
-  randomSeed: 20_261_125,
+  randomSeed: Number(process.argv[5] ?? 20_261_125),
 };
 
 const planners: PlannerKind[] = ['nearest', 'priority', 'rl'];
@@ -51,7 +64,7 @@ const totals = Object.fromEntries(
   }
 >;
 
-const fullRuns = Number(process.argv[3] ?? 40);
+const fullRuns = Number(process.argv[3] ?? process.argv[2] ?? 40);
 for (let run = 0; run < fullRuns; run += 1) {
   const runConfig = {
     ...config,

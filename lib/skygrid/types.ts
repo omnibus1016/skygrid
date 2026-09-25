@@ -150,6 +150,19 @@ export interface PolicyStats {
     improvementVsBest: number;
     passed: boolean;
   };
+  operationalValidation?: {
+    scenarios: number;
+    seeds: number[];
+    durationSec: number;
+    rlContinuity: number;
+    nearestContinuity: number;
+    rlRevisitCompliance: number;
+    nearestRevisitCompliance: number;
+    rlWeightedGapSeconds: number;
+    nearestWeightedGapSeconds: number;
+    rlRecoveryRate: number;
+    nearestRecoveryRate: number;
+  };
 }
 
 export interface FlightLogPoint extends GeoPoint {

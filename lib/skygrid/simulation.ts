@@ -588,8 +588,16 @@ export function advanceMission(
       drone.turnaroundRemainingSec <= 0 &&
       drone.routeIndex >= drone.route.length,
   );
+  const dronesWithRemainingRoute = drones.filter(
+    (drone) =>
+      drone.status !== 'failed' && drone.routeIndex < drone.route.length,
+  ).length;
+  const readyCapacityNeeded =
+    readyDroneAvailable && waypoints.length > dronesWithRemainingRoute;
   const needsPlan =
-    activeRouteCompleted || (hasUnassignedWaypoint && readyDroneAvailable);
+    activeRouteCompleted ||
+    (hasUnassignedWaypoint && readyDroneAvailable) ||
+    readyCapacityNeeded;
 
   if (needsPlan && waypoints.length) {
     const start = performance.now();
@@ -780,7 +788,7 @@ export function runBatchEvaluation(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '물리 제약 결합 DQN' },
+    { kind: 'rl', label: '제약 인지 잔차 DQN' },
   ];
   return planners.map(({ kind, label }) => {
     const totals = {
@@ -857,7 +865,7 @@ export function runScenarioComparison(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '물리 제약 결합 DQN' },
+    { kind: 'rl', label: '제약 인지 잔차 DQN' },
   ];
   return planners.map(({ kind, label }) => {
     const base = cloneMissionState(initialState);

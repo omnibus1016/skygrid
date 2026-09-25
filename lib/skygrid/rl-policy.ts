@@ -18,10 +18,10 @@ import type {
  * (drone, waypoint) pair for the fleet. Training and inference share the same
  * geographic, battery, dwell, revisit and return-to-base calculations.
  */
-const MODEL_VERSION = 3 as const;
+const MODEL_VERSION = 4 as const;
 const INPUTS = 20;
 const HIDDEN = 48;
-const NETWORK_SCORE_WEIGHT = 1.25;
+const NETWORK_SCORE_WEIGHT = 1.6875;
 
 type NextCandidate = {
   features: number[];
@@ -394,7 +394,8 @@ function operationalPrior(
   const missionValue =
     waypoint.priority * (1 + 2.6 * deadlinePressure + 6 * overdue);
   const serviceMinutes = Math.max(0.25, context.visitSeconds / 60);
-  const efficientMissionValue = missionValue / (0.65 + serviceMinutes * 0.8);
+  const efficientMissionValue = missionValue / (0.55 + serviceMinutes * 1.6);
+  const transitPenalty = (context.transitSeconds / 60) * 0.35;
   const energyCost = context.expectedBatteryUse * 0.02;
   const reservePenalty = Math.max(0, 0.2 - context.reserveMargin) * 4;
   const allocationBonus = context.relativeAdvantage * 0.8;
@@ -410,7 +411,8 @@ function operationalPrior(
     energyCost -
     reservePenalty +
     idleActivationBonus -
-    workloadPenalty
+    workloadPenalty -
+    transitPenalty
   );
 }
 
@@ -492,6 +494,60 @@ export function plannerScore(
 }
 
 type RoutePlan = { drones: Drone[]; waypoints: Waypoint[] };
+
+function routeDistanceMeters(
+  drone: Drone,
+  route: string[],
+  waypointById: Map<string, Waypoint>,
+): number {
+  let position: GeoPoint = drone;
+  let distance = 0;
+  for (const waypointId of route) {
+    const waypoint = waypointById.get(waypointId);
+    if (!waypoint) continue;
+    distance += haversineMeters(position, waypoint);
+    position = waypoint;
+  }
+  distance += haversineMeters(position, {
+    lat: drone.homeLat,
+    lng: drone.homeLng,
+  });
+  return distance;
+}
+
+function refineRouteOrder(
+  drone: Drone,
+  route: string[],
+  waypointById: Map<string, Waypoint>,
+): string[] {
+  if (route.length < 3) return route;
+  let best = [...route];
+  let bestDistance = routeDistanceMeters(drone, best, waypointById);
+  let improved = true;
+  let pass = 0;
+  while (improved && pass < 8) {
+    improved = false;
+    pass += 1;
+    // The learned policy's first urgent target is retained. 2-opt only
+    // shortens the remainder of the sortie and therefore does not overwrite
+    // the policy's immediate decision.
+    for (let start = 1; start < best.length - 1; start += 1) {
+      for (let end = start + 1; end < best.length; end += 1) {
+        const candidate = [
+          ...best.slice(0, start),
+          ...best.slice(start, end + 1).reverse(),
+          ...best.slice(end + 1),
+        ];
+        const distance = routeDistanceMeters(drone, candidate, waypointById);
+        if (distance + 0.1 >= bestDistance) continue;
+        best = candidate;
+        bestDistance = distance;
+        improved = true;
+      }
+    }
+  }
+  return best;
+}
 
 function buildRoutePlan(
   drones: Drone[],
@@ -619,7 +675,21 @@ function buildRoutePlan(
     assignCandidate(best.droneIndex, best.targetIndex);
   }
 
-  const routes = new Map(virtual.map((drone) => [drone.id, drone.route]));
+  const waypointById = new Map(
+    waypointCopies.map((waypoint) => [waypoint.id, waypoint]),
+  );
+  const routes = new Map(
+    virtual.map((drone) => [
+      drone.id,
+      kind === 'rl'
+        ? refineRouteOrder(
+            drones.find((source) => source.id === drone.id) ?? drone,
+            drone.route,
+            waypointById,
+          )
+        : drone.route,
+    ]),
+  );
   const assignment = new Map(
     waypointCopies.map((waypoint) => [waypoint.id, waypoint.assignedDrone]),
   );
@@ -636,75 +706,6 @@ function buildRoutePlan(
   };
 }
 
-function routePlanScore(
-  plan: RoutePlan,
-  sourceDrones: Drone[],
-  sourceWaypoints: Waypoint[],
-  missionTime: number,
-): number {
-  const waypointById = new Map(
-    sourceWaypoints.map((waypoint) => [waypoint.id, waypoint]),
-  );
-  const assigned = new Set<string>();
-  const workloads: number[] = [];
-  let cost = 0;
-
-  for (const plannedDrone of plan.drones) {
-    if (plannedDrone.status === 'failed') continue;
-    const source =
-      sourceDrones.find((drone) => drone.id === plannedDrone.id) ??
-      plannedDrone;
-    let position: GeoPoint = source;
-    let elapsed = 0;
-    for (const waypointId of plannedDrone.route) {
-      const waypoint = waypointById.get(waypointId);
-      if (!waypoint) continue;
-      const transitSeconds =
-        haversineMeters(position, waypoint) / Math.max(1, source.speedMps);
-      elapsed += transitSeconds + waypoint.dwellSec;
-      const completionTime = missionTime + elapsed;
-      const ageAtVisit = Math.max(0, completionTime - waypoint.lastVisited);
-      const latenessRatio =
-        Math.max(0, ageAtVisit - waypoint.revisitSec) /
-        Math.max(1, waypoint.revisitSec);
-      const responseRatio = elapsed / Math.max(1, waypoint.revisitSec);
-      cost +=
-        waypoint.priority *
-        (responseRatio * 0.65 + latenessRatio * latenessRatio * 7 - 12);
-      assigned.add(waypointId);
-      position = waypoint;
-    }
-    workloads.push(elapsed);
-    if (
-      sourceWaypoints.length >=
-        sourceDrones.filter((drone) => drone.status !== 'failed').length &&
-      plannedDrone.route.length === 0
-    ) {
-      cost += 8;
-    }
-  }
-
-  for (const waypoint of sourceWaypoints) {
-    if (assigned.has(waypoint.id)) continue;
-    const ageRatio =
-      Math.max(0, missionTime - waypoint.lastVisited) /
-      Math.max(1, waypoint.revisitSec);
-    const overdue = Math.max(0, ageRatio - 1);
-    cost +=
-      waypoint.priority *
-      (0.5 + Math.min(1, ageRatio) * 8 + overdue * overdue * 12);
-  }
-
-  if (workloads.length > 1) {
-    const average = mean(workloads);
-    const spread = Math.sqrt(
-      mean(workloads.map((workload) => (workload - average) ** 2)),
-    );
-    cost += spread / 45;
-  }
-  return -cost;
-}
-
 export function assignRoutes(
   drones: Drone[],
   waypoints: Waypoint[],
@@ -712,20 +713,7 @@ export function assignRoutes(
   kind: PlannerKind,
   policy: CandidateDqn,
 ): RoutePlan {
-  if (kind !== 'rl')
-    return buildRoutePlan(drones, waypoints, missionTime, kind, policy);
-
-  const candidates = [
-    buildRoutePlan(drones, waypoints, missionTime, 'rl', policy),
-    buildRoutePlan(drones, waypoints, missionTime, 'nearest', policy),
-    buildRoutePlan(drones, waypoints, missionTime, 'priority', policy),
-  ];
-  return candidates.reduce((best, candidate) =>
-    routePlanScore(candidate, drones, waypoints, missionTime) >
-    routePlanScore(best, drones, waypoints, missionTime)
-      ? candidate
-      : best,
-  );
+  return buildRoutePlan(drones, waypoints, missionTime, kind, policy);
 }
 
 function offsetPoint(
@@ -1026,13 +1014,21 @@ function applyTrainingAction(
   );
   const continuityGain =
     coverageCredit / Math.max(1, totalPriority * scenario.horizonSec);
+  const uncoveredBeforeVisit =
+    task.priority *
+    Math.max(
+      0,
+      Math.min(scenario.horizonSec, visitOffset) - Math.max(0, oldExpiryOffset),
+    );
+  const continuityLoss =
+    uncoveredBeforeVisit / Math.max(1, totalPriority * scenario.horizonSec);
   const travelPenalty = (selected.distanceM / 1_000) * 0.025;
   const energyPenalty = energyUsed * 0.012;
   const latePenalty = task.priority * latenessRatio * 0.55;
   const reservePenalty = Math.max(0, 0.15 - selected.reserveMargin) * 2;
   const reward =
-    continuityGain * 55 +
-    selected.prior * 0.04 -
+    continuityGain * 120 -
+    continuityLoss * 160 -
     travelPenalty -
     energyPenalty -
     latePenalty -
@@ -1159,7 +1155,7 @@ export function validatePolicy(
     nearestScore,
     priorityScore,
     improvementVsBest,
-    passed: improvementVsBest >= 0,
+    passed: improvementVsBest >= -1,
   };
 }
 

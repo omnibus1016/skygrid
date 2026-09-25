@@ -4,6 +4,7 @@ import type {
   DroneProfileId,
   GeoPoint,
   MissionState,
+  PlannerKind,
   ScenarioConfig,
 } from './types';
 
@@ -24,6 +25,23 @@ export interface MissionPlanFile {
       'id' | 'profileId' | 'model' | 'speedMps' | 'reserveBattery' | 'route'
     >
   >;
+  policy?: MissionPolicyMetadata;
+}
+
+export interface MissionPolicyMetadata {
+  planner: PlannerKind;
+  modelName: string;
+  modelVersion: number | null;
+  episodes: number;
+  origin: 'pretrained' | 'custom';
+  trainedAt: string | null;
+  validation: {
+    scenarios: number;
+    rlScore: number;
+    nearestScore: number;
+    priorityScore: number;
+    improvementVsBest: number;
+  } | null;
 }
 
 export interface FieldRouteSummary {
@@ -91,6 +109,7 @@ export function plannedPathForDrone(
 export function buildMissionPlanFile(
   mission: MissionState,
   config: ScenarioConfig,
+  policy?: MissionPolicyMetadata,
 ): MissionPlanFile {
   return {
     schema: 'skygrid.mission-plan.v1',
@@ -106,6 +125,7 @@ export function buildMissionPlanFile(
       reserveBattery: drone.reserveBattery,
       route: drone.route,
     })),
+    policy,
   };
 }
 
