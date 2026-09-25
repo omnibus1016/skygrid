@@ -1814,7 +1814,7 @@ export default function SkygridApp() {
               alt="KAIST"
             />
           </div>
-          <div>
+          <div className="brand-copy">
             <div className="brand-name">SKYGRID</div>
             <div className="brand-sub">군집 무인기 정찰 경로 최적화 플랫폼</div>
           </div>

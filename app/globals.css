@@ -2382,29 +2382,35 @@ textarea {
   font-family: var(--font-ui);
 }
 .mission-header {
-  height: 60px;
-  grid-template-columns: minmax(320px, 1fr) auto minmax(320px, 1fr);
-  padding: 0 16px;
+  height: 64px;
+  grid-template-columns: minmax(350px, 1fr) auto minmax(350px, 1fr);
+  padding: 0 18px;
   border-bottom-color: #334047;
   background: #0c1317;
 }
 .brand-lockup {
-  gap: 11px;
+  gap: 12px;
+  min-width: 0;
 }
 .brand-insignia {
-  height: 38px;
-  gap: 8px;
-  padding-right: 11px;
+  height: 46px;
+  flex: 0 0 auto;
+  gap: 10px;
+  padding-right: 13px;
   border-right-color: #344047;
 }
 .header-rokaf {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
 }
 .header-kaist {
-  width: 60px;
-  height: 24px;
-  opacity: 0.78;
+  width: 78px;
+  height: 28px;
+  filter: brightness(1.45) saturate(0.78);
+  opacity: 0.9;
+}
+.brand-copy {
+  min-width: 0;
 }
 .brand-name {
   font-family: 'ROKAF Sans', var(--font-ui);
@@ -2421,12 +2427,12 @@ textarea {
   letter-spacing: 0;
 }
 .mission-header [data-slot='tabs-list'] {
-  height: 60px;
+  height: 64px;
   gap: 0;
   background: transparent;
 }
 .mission-tab {
-  height: 60px;
+  height: 64px;
   min-width: 100px;
   padding: 0 16px;
   border: 0;
@@ -2449,8 +2455,11 @@ textarea {
   background: #141d22;
 }
 .mission-shell {
-  height: calc(100vh - 60px);
+  height: calc(100vh - 64px);
   grid-template-columns: 270px minmax(610px, 1fr) 320px;
+}
+.workspace-page {
+  min-height: calc(100vh - 64px);
 }
 .left-rail,
 .right-rail {
@@ -2809,6 +2818,10 @@ textarea {
   color: #c5cdd1;
 }
 @media (max-width: 1280px) {
+  .mission-header {
+    grid-template-columns: minmax(336px, 1fr) auto minmax(336px, 1fr);
+    padding-inline: 14px;
+  }
   .mission-shell {
     grid-template-columns: 250px minmax(590px, 1fr) 300px;
   }
