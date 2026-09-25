@@ -4,7 +4,6 @@ import { Fragment, useEffect, useMemo } from 'react';
 import L from 'leaflet';
 import {
   Circle,
-  CircleMarker,
   MapContainer,
   Marker,
   Polygon,
@@ -94,6 +93,7 @@ function MapViewport({ minLat, maxLat, minLng, maxLng }: ViewportBounds) {
 }
 
 function droneIcon(
+  id: string,
   color: string,
   heading: number,
   failed: boolean,
@@ -102,10 +102,49 @@ function droneIcon(
   return L.divIcon({
     className: 'skygrid-leaflet-icon',
     html: `<div class="uav-map-marker ${failed ? 'is-failed' : ''} ${selected ? 'is-selected' : ''}" style="--uav-color:${color};--heading:${heading}deg">
-      <span class="uav-pulse"></span><span class="uav-body"><i></i><b></b></span>
+      <span class="uav-pulse"></span><span class="uav-body"><i></i><b></b></span><em>${id}</em>
     </div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
+    iconSize: [76, 54],
+    iconAnchor: [38, 19],
+  });
+}
+
+interface RouteAssignment {
+  droneId: string;
+  color: string;
+  order: number;
+  next: boolean;
+}
+
+function shortDroneId(id: string): string {
+  const numeric = Number.parseInt(id.replace(/\D/g, ''), 10);
+  return Number.isFinite(numeric) ? `U${numeric}` : id;
+}
+
+function waypointIcon(
+  id: string,
+  assignment: RouteAssignment | undefined,
+  overdue: boolean,
+  selected: boolean,
+): L.DivIcon {
+  const color = assignment?.color ?? (overdue ? '#ff786a' : '#73d9ed');
+  const classes = [
+    'route-point-marker',
+    assignment?.next ? 'is-next' : '',
+    overdue ? 'is-overdue' : '',
+    selected ? 'is-selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const owner = assignment ? shortDroneId(assignment.droneId) : '—';
+  return L.divIcon({
+    className: 'skygrid-leaflet-icon',
+    html: `<div class="${classes}" style="--route-color:${color}">
+      <span>${assignment?.order ?? '·'}</span>
+      <div><b>${id}</b><i>${owner}${assignment?.next ? ' · 다음' : ''}</i></div>
+    </div>`,
+    iconSize: [70, 42],
+    iconAnchor: [15, 15],
   });
 }
 
@@ -131,13 +170,38 @@ export default function OperationalMap({
   onSelectDrone,
   onSelectWaypoint,
 }: OperationalMapProps) {
+  const routeAssignments = useMemo(() => {
+    const assignments = new Map<string, RouteAssignment>();
+    for (const drone of mission.drones) {
+      if (drone.status === 'failed' || drone.status === 'returning') continue;
+      drone.route.slice(drone.routeIndex).forEach((waypointId, index) => {
+        if (assignments.has(waypointId)) return;
+        assignments.set(waypointId, {
+          droneId: drone.id,
+          color: drone.color,
+          order: index + 1,
+          next: index === 0,
+        });
+      });
+    }
+    return assignments;
+  }, [mission.drones]);
+
   const routeLines = useMemo(
     () =>
       mission.drones.flatMap((drone) => {
         if (drone.status === 'failed') return [];
         if (drone.status === 'returning') {
           const points = aStarRoute(drone, mission.base, mission.noFlyZones);
-          return [{ id: drone.id, color: drone.color, points }];
+          return [
+            {
+              id: drone.id,
+              color: drone.color,
+              points,
+              nextPoints: points,
+              returning: true,
+            },
+          ];
         }
         const remaining = drone.route
           .slice(drone.routeIndex)
@@ -154,8 +218,21 @@ export default function OperationalMap({
           );
           line.push(...(i === 1 ? segment : segment.slice(1)));
         }
+        const nextPoints = aStarRoute(
+          drone,
+          remaining[0],
+          mission.noFlyZones,
+        );
         return line.length
-          ? [{ id: drone.id, color: drone.color, points: line }]
+          ? [
+              {
+                id: drone.id,
+                color: drone.color,
+                points: line,
+                nextPoints,
+                returning: false,
+              },
+            ]
           : [];
       }),
     [mission.drones, mission.waypoints, mission.base, mission.noFlyZones],
@@ -247,9 +324,24 @@ export default function OperationalMap({
             )}
             pathOptions={{
               color: route.color,
-              weight: 2.4,
-              opacity: 0.88,
-              dashArray: '9 8',
+              weight: 1.6,
+              opacity: 0.58,
+              dashArray: '6 7',
+            }}
+          />
+        ))}
+
+      {mode !== 'analysis' &&
+        routeLines.map((route) => (
+          <Polyline
+            key={`${route.id}-next`}
+            positions={route.nextPoints.map(
+              (point) => [point.lat, point.lng] as [number, number],
+            )}
+            pathOptions={{
+              color: route.returning ? '#f2c46e' : route.color,
+              weight: 3.8,
+              opacity: 0.96,
             }}
           />
         ))}
@@ -277,23 +369,18 @@ export default function OperationalMap({
         const overdue =
           mission.time - waypoint.lastVisited > waypoint.revisitSec;
         const selected = waypoint.id === selectedWaypointId;
+        const assignment = routeAssignments.get(waypoint.id);
         return (
-          <CircleMarker
+          <Marker
             key={waypoint.id}
-            center={[waypoint.lat, waypoint.lng]}
-            radius={5 + waypoint.priority * 0.55 + (selected ? 2 : 0)}
-            pathOptions={{
-              color: selected
-                ? '#ffffff'
-                : overdue
-                  ? '#ff786a'
-                  : waypoint.priority >= 4
-                    ? '#fbbf62'
-                    : '#73d9ed',
-              fillColor: overdue ? '#501f1b' : '#0b2730',
-              fillOpacity: 0.9,
-              weight: selected ? 3 : 1.5,
-            }}
+            position={[waypoint.lat, waypoint.lng]}
+            icon={waypointIcon(
+              waypoint.id,
+              assignment,
+              overdue,
+              selected,
+            )}
+            zIndexOffset={assignment?.next ? 300 : selected ? 200 : 0}
             eventHandlers={{
               click: () => onSelectWaypoint(waypoint.id),
               contextmenu: (event) => {
@@ -317,11 +404,15 @@ export default function OperationalMap({
             >
               <strong>{waypoint.id}</strong>
               <br />
+              {assignment
+                ? `${assignment.droneId} · ${assignment.order}번째 방문`
+                : '담당 기체 미배정'}
+              <br />
               중요도 {waypoint.priority} · 정찰 {waypoint.dwellSec}초
               <br />
               재방문 {waypoint.revisitSec}초
             </Tooltip>
-          </CircleMarker>
+          </Marker>
         );
       })}
 
@@ -331,6 +422,7 @@ export default function OperationalMap({
             key={drone.id}
             position={[drone.lat, drone.lng]}
             icon={droneIcon(
+              drone.id,
               drone.color,
               drone.heading,
               drone.status === 'failed',

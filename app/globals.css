@@ -1672,15 +1672,15 @@ button {
   --uav-color: #67e8f9;
   --heading: 0deg;
   position: relative;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  transform: rotate(var(--heading));
+  width: 76px;
+  height: 54px;
 }
 .uav-pulse {
   position: absolute;
-  inset: 1px;
+  left: 19px;
+  top: 0;
+  width: 38px;
+  height: 38px;
   border: 1px solid var(--uav-color);
   border-radius: 50%;
   opacity: 0.5;
@@ -1694,7 +1694,9 @@ button {
   }
 }
 .uav-body {
-  position: relative;
+  position: absolute;
+  left: 24px;
+  top: 5px;
   width: 27px;
   height: 27px;
   display: block;
@@ -1702,6 +1704,7 @@ button {
   border-radius: 50%;
   background: #071319e8;
   box-shadow: 0 0 12px color-mix(in srgb, var(--uav-color) 30%, transparent);
+  transform: rotate(var(--heading));
 }
 .uav-body::before,
 .uav-body::after {
@@ -1745,6 +1748,84 @@ button {
 }
 .uav-map-marker.is-failed .uav-body {
   --uav-color: #ff7467;
+}
+.uav-map-marker > em {
+  position: absolute;
+  left: 50%;
+  top: 38px;
+  min-width: 46px;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--uav-color) 64%, #1a2a30);
+  border-radius: 2px;
+  background: #071319e8;
+  color: #e4f4f7;
+  font: normal 700 9px var(--font-geist-mono);
+  letter-spacing: 0.03em;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.route-point-marker {
+  --route-color: #73d9ed;
+  position: relative;
+  width: 70px;
+  height: 42px;
+  color: #dce9ed;
+}
+.route-point-marker > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--route-color);
+  border-radius: 50%;
+  background: #071319ed;
+  color: #f3fbfd;
+  font: 700 12px var(--font-geist-mono);
+}
+.route-point-marker > div {
+  position: absolute;
+  left: 35px;
+  top: 0;
+  min-width: 34px;
+  padding: 3px 5px;
+  border: 1px solid #314850;
+  border-left: 2px solid var(--route-color);
+  border-radius: 2px;
+  background: #071319e8;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.route-point-marker b,
+.route-point-marker i {
+  display: block;
+  font-family: var(--font-geist-mono);
+}
+.route-point-marker b {
+  color: #e7f0f2;
+  font-size: 9px;
+}
+.route-point-marker i {
+  margin-top: 3px;
+  color: var(--route-color);
+  font-size: 8px;
+  font-style: normal;
+}
+.route-point-marker.is-next > span {
+  border-width: 3px;
+  background: color-mix(in srgb, var(--route-color) 18%, #071319);
+}
+.route-point-marker.is-selected > span {
+  outline: 2px solid #edf7f9;
+  outline-offset: 2px;
+}
+.route-point-marker.is-overdue:not(.is-next) > span {
+  background: linear-gradient(to top, #5a211d 0 4px, #071319ed 4px);
+  color: #ffb3ab;
 }
 .tactical-tooltip {
   padding: 7px 9px !important;
