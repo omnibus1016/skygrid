@@ -377,6 +377,55 @@ export interface FieldVisitResult {
   batteryUsed: number;
 }
 
+export function fieldPlanningWaypoints(
+  waypoints: Waypoint[],
+  excludedWaypointIds: string[] = [],
+): Waypoint[] {
+  if (!waypoints.length) return [];
+  const excluded = new Set(excludedWaypointIds);
+  const minimumVisits = Math.min(
+    ...waypoints.map((waypoint) => waypoint.visitedCount),
+  );
+  return waypoints.filter((waypoint) => {
+    if (excluded.has(waypoint.id)) return false;
+    return waypoint.visitedCount === minimumVisits;
+  });
+}
+
+export function assignFieldRoutes(
+  drones: Drone[],
+  waypoints: Waypoint[],
+  missionTime: number,
+  planner: PlannerKind,
+  policy: CandidateDqn,
+  excludedWaypointIds: string[] = [],
+): ReturnType<typeof assignRoutes> {
+  const candidates = fieldPlanningWaypoints(
+    waypoints,
+    excludedWaypointIds,
+  );
+  const planned = assignRoutes(
+    drones,
+    candidates,
+    missionTime,
+    planner,
+    policy,
+  );
+  const assignment = new Map(
+    planned.waypoints.map((waypoint) => [
+      waypoint.id,
+      waypoint.assignedDrone,
+    ]),
+  );
+  return {
+    drones: planned.drones,
+    waypoints: waypoints.map((waypoint) => ({
+      ...waypoint,
+      assignedDrone: assignment.get(waypoint.id),
+    })),
+  };
+}
+
 /**
  * Applies one operator-confirmed field visit. The report means the aircraft is
  * already at the selected point, so the digital marker, energy estimate and
@@ -435,21 +484,13 @@ export function reportFieldWaypointVisit(
         }
       : candidate,
   );
-  const planningWaypoints = visitedWaypoints.filter(
-    (candidate) => candidate.id !== waypointId,
-  );
-  const planned = assignRoutes(
+  const planned = assignFieldRoutes(
     positionedDrones,
-    planningWaypoints,
+    visitedWaypoints,
     state.time,
     planner,
     policy,
-  );
-  const plannedWaypointById = new Map(
-    planned.waypoints.map((candidate) => [candidate.id, candidate]),
-  );
-  const waypoints = visitedWaypoints.map(
-    (candidate) => plannedWaypointById.get(candidate.id) ?? candidate,
+    [waypointId],
   );
   const plannedDrone = planned.drones.find(
     (candidate) => candidate.id === droneId,
@@ -480,7 +521,7 @@ export function reportFieldWaypointVisit(
     state: {
       ...state,
       drones,
-      waypoints,
+      waypoints: planned.waypoints,
       revisitChecks: state.revisitChecks + 1,
       onTimeRevisits: state.onTimeRevisits + (onTime ? 1 : 0),
       replanCount: state.replanCount + 1,

@@ -116,6 +116,7 @@ import {
 import {
   advanceFieldMission,
   advanceMission,
+  assignFieldRoutes,
   cloneMissionState,
   createMission,
   missionMetrics,
@@ -319,6 +320,30 @@ export default function SkygridApp() {
   const [config, setConfig] = useState<ScenarioConfig>(DEFAULT_CONFIG);
   const operationalPlanner: PlannerKind =
     mode === 'field' ? 'rl' : config.planner;
+  const planOperationalRoutes = useCallback(
+    (
+      drones: Drone[],
+      waypoints: Waypoint[],
+      missionTime: number,
+      planner = operationalPlanner,
+    ) =>
+      mode === 'field'
+        ? assignFieldRoutes(
+            drones,
+            waypoints,
+            missionTime,
+            planner,
+            policyBundle.policy,
+          )
+        : assignRoutes(
+            drones,
+            waypoints,
+            missionTime,
+            planner,
+            policyBundle.policy,
+          ),
+    [mode, operationalPlanner, policyBundle.policy],
+  );
   const [mission, setMission] = useState(() =>
     createMission(DEFAULT_CONFIG, policyBundle.policy),
   );
@@ -384,6 +409,19 @@ export default function SkygridApp() {
   }, []);
 
   const metrics = useMemo(() => missionMetrics(mission), [mission]);
+  const fieldPatrolProgress = useMemo(() => {
+    if (!mission.waypoints.length) return null;
+    const minimumVisits = Math.min(
+      ...mission.waypoints.map((waypoint) => waypoint.visitedCount),
+    );
+    return {
+      round: minimumVisits + 1,
+      completed: mission.waypoints.filter(
+        (waypoint) => waypoint.visitedCount > minimumVisits,
+      ).length,
+      total: mission.waypoints.length,
+    };
+  }, [mission.waypoints]);
   const hasMissionResults = mission.time > 0 || mission.completed;
   const selectedDrone =
     mission.drones.find((drone) => drone.id === selectedDroneId) ??
@@ -528,12 +566,11 @@ export default function SkygridApp() {
       };
     });
     setMission((current) => {
-      const planned = assignRoutes(
+      const planned = planOperationalRoutes(
         drones,
         current.waypoints,
         current.time,
         operationalPlanner,
-        policyBundle.policy,
       );
       return {
         ...current,
@@ -559,7 +596,7 @@ export default function SkygridApp() {
     setSelectedDroneId('UAV-01');
     setDropoutDroneId('UAV-02');
     setFieldNotice('실비행 기체 2대를 기지에 배치했습니다.');
-  }, [mission.base, operationalPlanner, policyBundle.policy]);
+  }, [mission.base, operationalPlanner, planOperationalRoutes]);
 
   const resetFieldWorkspace = useCallback(() => {
     const nextConfig = {
@@ -670,12 +707,11 @@ export default function SkygridApp() {
     (planner = operationalPlanner) => {
       const start = performance.now();
       setMission((current) => {
-        const planned = assignRoutes(
+        const planned = planOperationalRoutes(
           current.drones,
           current.waypoints,
           current.time,
           planner,
-          policyBundle.policy,
         );
         return {
           ...current,
@@ -696,7 +732,7 @@ export default function SkygridApp() {
         };
       });
     },
-    [operationalPlanner, policyBundle.policy],
+    [operationalPlanner, planOperationalRoutes],
   );
 
   const createFieldFlightPlan = useCallback(() => {
@@ -713,7 +749,7 @@ export default function SkygridApp() {
       return;
     }
     const start = performance.now();
-    const planned = assignRoutes(
+    const planned = assignFieldRoutes(
       mission.drones,
       mission.waypoints,
       mission.time,
@@ -744,34 +780,66 @@ export default function SkygridApp() {
 
   const executeDropout = useCallback(() => {
     if (!activeDropoutDroneId) return;
-    setMission((current) =>
-      triggerFailure(
+    setMission((current) => {
+      const failed = triggerFailure(
         current,
         activeDropoutDroneId,
         operationalPlanner,
         policyBundle.policy,
         dropoutReason,
-      ),
-    );
+      );
+      if (mode !== 'field') return failed;
+      const planned = assignFieldRoutes(
+        failed.drones,
+        failed.waypoints,
+        failed.time,
+        'rl',
+        policyBundle.policy,
+      );
+      return {
+        ...failed,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+      };
+    });
     setSelectedDroneId(activeDropoutDroneId);
   }, [
     activeDropoutDroneId,
     dropoutReason,
+    mode,
     operationalPlanner,
     policyBundle.policy,
   ]);
 
   const recoverSelectedDrone = useCallback(() => {
     if (!selectedDroneId) return;
-    setMission((current) =>
-      restoreDrone(
+    setMission((current) => {
+      const restored = restoreDrone(
         current,
         selectedDroneId,
         operationalPlanner,
         policyBundle.policy,
-      ),
-    );
-  }, [selectedDroneId, operationalPlanner, policyBundle.policy]);
+      );
+      if (mode !== 'field') return restored;
+      const planned = assignFieldRoutes(
+        restored.drones,
+        restored.waypoints,
+        restored.time,
+        'rl',
+        policyBundle.policy,
+      );
+      return {
+        ...restored,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+      };
+    });
+  }, [
+    mode,
+    selectedDroneId,
+    operationalPlanner,
+    policyBundle.policy,
+  ]);
 
   const toggleMission = useCallback(() => {
     if (!mission.running && !missionReady) return;
@@ -863,12 +931,11 @@ export default function SkygridApp() {
           visitedCount: 0,
         };
         const waypoints = [...current.waypoints, waypoint];
-        const planned = assignRoutes(
+        const planned = planOperationalRoutes(
           current.drones,
           waypoints,
           current.time,
           operationalPlanner,
-          policyBundle.policy,
         );
         return {
           ...current,
@@ -890,7 +957,7 @@ export default function SkygridApp() {
       setInteraction('inspect');
       setMapContextMenu(null);
     },
-    [mission.waypoints, operationalPlanner, policyBundle.policy],
+    [mission.waypoints, operationalPlanner, planOperationalRoutes],
   );
 
   const addDroneAt = useCallback(
@@ -933,12 +1000,11 @@ export default function SkygridApp() {
       }));
       setMission((current) => {
         const drones = [...current.drones, newDrone];
-        const planned = assignRoutes(
+        const planned = planOperationalRoutes(
           drones,
           current.waypoints,
           current.time,
           operationalPlanner,
-          policyBundle.policy,
         );
         return {
           ...current,
@@ -961,7 +1027,7 @@ export default function SkygridApp() {
       setMapContextMenu(null);
       setPendingDronePoint(null);
     },
-    [mission.drones, mission.base, operationalPlanner, policyBundle.policy],
+    [mission.drones, mission.base, operationalPlanner, planOperationalRoutes],
   );
 
   const requestDronePlacement = useCallback((point: GeoPoint) => {
@@ -990,12 +1056,11 @@ export default function SkygridApp() {
               : {}),
           };
         });
-        const planned = assignRoutes(
+        const planned = planOperationalRoutes(
           drones,
           current.waypoints,
           current.time,
           operationalPlanner,
-          policyBundle.policy,
         );
         return {
           ...current,
@@ -1018,7 +1083,7 @@ export default function SkygridApp() {
       setInteraction('inspect');
       setMapContextMenu(null);
     },
-    [operationalPlanner, policyBundle.policy],
+    [operationalPlanner, planOperationalRoutes],
   );
 
   const handleMapClick = useCallback(
@@ -1052,12 +1117,11 @@ export default function SkygridApp() {
                 }
               : drone,
           );
-          const planned = assignRoutes(
+          const planned = planOperationalRoutes(
             drones,
             current.waypoints,
             current.time,
             operationalPlanner,
-            policyBundle.policy,
           );
           return {
             ...current,
@@ -1087,7 +1151,7 @@ export default function SkygridApp() {
       requestDronePlacement,
       setBaseAt,
       operationalPlanner,
-      policyBundle.policy,
+      planOperationalRoutes,
     ],
   );
 
@@ -1107,12 +1171,11 @@ export default function SkygridApp() {
         const waypoints = current.waypoints.filter(
           (waypoint) => waypoint.id !== waypointId,
         );
-        const planned = assignRoutes(
+        const planned = planOperationalRoutes(
           current.drones,
           waypoints,
           current.time,
           operationalPlanner,
-          policyBundle.policy,
         );
         return {
           ...current,
@@ -1134,7 +1197,7 @@ export default function SkygridApp() {
       });
       setMapContextMenu(null);
     },
-    [mission.waypoints, operationalPlanner, policyBundle.policy],
+    [mission.waypoints, operationalPlanner, planOperationalRoutes],
   );
 
   const deleteSelectedWaypoint = useCallback(() => {
@@ -1161,12 +1224,11 @@ export default function SkygridApp() {
             ? { ...waypoint, assignedDrone: undefined }
             : waypoint,
         );
-        const planned = assignRoutes(
+        const planned = planOperationalRoutes(
           drones,
           waypoints,
           current.time,
           operationalPlanner,
-          policyBundle.policy,
         );
         return {
           ...current,
@@ -1188,7 +1250,7 @@ export default function SkygridApp() {
       });
       setMapContextMenu(null);
     },
-    [mission.drones, operationalPlanner, policyBundle.policy],
+    [mission.drones, operationalPlanner, planOperationalRoutes],
   );
 
   const handleMapContextMenu = useCallback(
@@ -2107,7 +2169,12 @@ export default function SkygridApp() {
                   <div className="rail-section field-command-section">
                     <div className="section-heading">
                       <span>현재 이동 지시</span>
-                      <span>{selectedDrone.id}</span>
+                      <span>
+                        {selectedDrone.id}
+                        {fieldPatrolProgress
+                          ? ` · ${fieldPatrolProgress.round}차 ${fieldPatrolProgress.completed}/${fieldPatrolProgress.total}`
+                          : ''}
+                      </span>
                     </div>
                     <div className="aircraft-selector">
                       {mission.drones.map((drone) => (

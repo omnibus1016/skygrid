@@ -14,7 +14,8 @@
     "model:train": "tsx scripts/train-policy.ts",
     "model:benchmark": "tsx scripts/benchmark-policy.ts",
     "model:promote": "tsx scripts/promote-policy.ts",
-    "model:check-idle": "tsx scripts/check-idle-recovery.ts"
+    "model:check-idle": "tsx scripts/check-idle-recovery.ts",
+    "model:check-field": "tsx scripts/check-field-patrol.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
