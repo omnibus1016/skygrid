@@ -1,7 +1,5 @@
 import { CandidateDqn } from '../lib/skygrid/rl-policy';
-import {
-  PRETRAINED_POLICY_WEIGHTS,
-} from '../lib/skygrid/pretrained-policy';
+import { PRETRAINED_POLICY_WEIGHTS } from '../lib/skygrid/pretrained-policy';
 import {
   createMission,
   reportFieldWaypointVisit,
@@ -23,14 +21,18 @@ function config(droneCount: number, seed: number): ScenarioConfig {
     simRate: 1,
     sensorRadiusM: 110,
     randomSeed: seed,
+    // This regression isolates round-robin field reporting from range and
+    // obstacle constraints, which are covered by check-research-pipeline.
+    layout: 'ring',
+    mixedFleet: false,
+    noFlyZoneCount: 0,
   };
 }
 
 function nextAssignedDrone(mission: MissionState) {
   return mission.drones.find(
     (drone) =>
-      drone.status !== 'failed' &&
-      Boolean(drone.route[drone.routeIndex]),
+      drone.status !== 'failed' && Boolean(drone.route[drone.routeIndex]),
   );
 }
 

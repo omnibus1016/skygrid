@@ -11,34 +11,21 @@ const trained = JSON.parse(readFileSync(inputPath, 'utf8')) as {
   weights: PolicyWeights;
   stats: PolicyStats;
 };
-const weights = { ...trained.weights, version: 4 as const };
+const weights = { ...trained.weights, version: 5 as const };
 const stats: PolicyStats = {
   ...trained.stats,
-  modelVersion: 4,
-  trainingScope:
-    '16,000개 반복 정찰·기체 이탈·배터리 복귀 시나리오 + 480개 전체 임무 외부 검증',
+  modelVersion: 5,
+  trainingScope: `${trained.stats.episodes.toLocaleString()}개 실제 비행 시뮬레이터 기반 복합 시나리오`,
   rewardHistory: trained.stats.rewardHistory.filter(
     (point) => point.episode === 1 || point.episode % 200 === 0,
   ),
   validation: trained.stats.validation
     ? {
         ...trained.stats.validation,
-        passed: trained.stats.validation.improvementVsBest >= -1,
+        passed: trained.stats.validation.improvementVsBest >= 0,
       }
     : undefined,
-  operationalValidation: {
-    scenarios: 480,
-    seeds: [710003, 810007, 910009],
-    durationSec: 1800,
-    rlContinuity: 40.87640415439307,
-    nearestContinuity: 40.32275953300815,
-    rlRevisitCompliance: 48.703642804895345,
-    nearestRevisitCompliance: 47.81916722602495,
-    rlWeightedGapSeconds: 55508.375,
-    nearestWeightedGapSeconds: 56457.78541666667,
-    rlRecoveryRate: 96.66666666666667,
-    nearestRecoveryRate: 79.375,
-  },
+  operationalValidation: undefined,
 };
 
 const source = `import type { PolicyWeights } from './rl-policy';

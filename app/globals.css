@@ -1978,10 +1978,10 @@ button {
 .scenario-comparison-head,
 .scenario-comparison-row {
   display: grid;
-  grid-template-columns: 1.45fr repeat(5, minmax(34px, 1fr));
+  grid-template-columns: 1.45fr repeat(6, minmax(34px, 1fr));
   gap: 4px;
   align-items: center;
-  min-width: 286px;
+  min-width: 330px;
   min-height: 27px;
   border-bottom: 1px solid #172c35;
 }

@@ -5,6 +5,7 @@ export type AppMode =
   | 'evaluation'
   | 'training';
 export type PlannerKind = 'rl' | 'nearest' | 'priority';
+export type ScenarioLayout = 'ring' | 'clustered' | 'mixed';
 export type DroneStatus = 'ready' | 'active' | 'failed' | 'returning';
 export type DronePhase = 'base' | 'transit' | 'dwell' | 'return';
 export type DroneProfileId =
@@ -86,6 +87,26 @@ export interface ScenarioConfig {
   simRate: number;
   sensorRadiusM: number;
   randomSeed: number;
+  /**
+   * Actual fleet size divided by the analytically estimated minimum fleet.
+   * When omitted, droneCount remains the authoritative manual setting.
+   */
+  loadFactor?: number;
+  layout?: ScenarioLayout;
+  mixedFleet?: boolean;
+  noFlyZoneCount?: number;
+}
+
+export interface CapacityEstimate {
+  requiredVisitRateHz: number;
+  averageRevisitSec: number;
+  averageTravelSec: number;
+  averageDwellSec: number;
+  averageServiceSec: number;
+  minimumRequiredDrones: number;
+  actualDrones: number;
+  loadFactor: number;
+  theoreticalContinuityUpperBound: number;
 }
 
 export interface MissionState {
@@ -113,6 +134,7 @@ export interface MissionState {
   recoveredAt: number | null;
   replanCount: number;
   inferenceMs: number;
+  capacityEstimate: CapacityEstimate;
 }
 
 export interface MissionMetrics {
@@ -132,6 +154,10 @@ export interface MissionMetrics {
   reserveViolations: number;
   sortieCount: number;
   completedVisits: number;
+  minimumRequiredDrones: number;
+  loadFactor: number;
+  theoreticalContinuityUpperBound: number;
+  upperBoundAttainment: number;
 }
 
 export interface PolicyStats {
@@ -211,6 +237,9 @@ export interface BatchResult {
   weightedGap: number;
   distance: number;
   completion: number;
+  upperBoundAttainment: number;
+  theoreticalUpperBound: number;
+  loadFactor: number;
 }
 
 export interface ScenarioComparisonResult {
@@ -225,4 +254,8 @@ export interface ScenarioComparisonResult {
   distanceKm: number;
   averageBattery: number;
   returnCount: number;
+  upperBoundAttainment: number;
+  theoreticalUpperBound: number;
+  minimumRequiredDrones: number;
+  loadFactor: number;
 }

@@ -20,7 +20,7 @@ const sourceWeights: PolicyWeights = modelPath
 const networkScale = Number(process.argv[4] ?? 1);
 const weights = {
   ...sourceWeights,
-  version: 4 as const,
+  version: 5 as const,
   w1: sourceWeights.w1.map((row) => [...row]),
   b1: [...sourceWeights.b1],
   w2: sourceWeights.w2.map((weight) => weight * networkScale),
@@ -39,6 +39,10 @@ const config: ScenarioConfig = {
   simRate: 4,
   sensorRadiusM: 110,
   randomSeed: Number(process.argv[5] ?? 20_261_125),
+  loadFactor: 0.8,
+  layout: 'mixed',
+  mixedFleet: true,
+  noFlyZoneCount: 2,
 };
 
 const planners: PlannerKind[] = ['nearest', 'priority', 'rl'];
@@ -51,6 +55,7 @@ const totals = Object.fromEntries(
       weightedGapSeconds: 0,
       recoverySeconds: 0,
       recovered: 0,
+      upperBoundAttainment: 0,
     },
   ]),
 ) as Record<
@@ -61,6 +66,7 @@ const totals = Object.fromEntries(
     weightedGapSeconds: number;
     recoverySeconds: number;
     recovered: number;
+    upperBoundAttainment: number;
   }
 >;
 
@@ -82,6 +88,7 @@ for (let run = 0; run < fullRuns; run += 1) {
     total.continuity += result.continuity;
     total.revisitCompliance += result.revisitCompliance;
     total.weightedGapSeconds += result.weightedGapSeconds;
+    total.upperBoundAttainment += result.upperBoundAttainment;
     if (result.recoverySeconds !== null) {
       total.recoverySeconds += result.recoverySeconds;
       total.recovered += 1;
@@ -92,12 +99,17 @@ for (let run = 0; run < fullRuns; run += 1) {
 process.stdout.write(
   JSON.stringify(
     {
-      routeAssignment: runBatchEvaluation(config, policy, 80),
+      routeAssignment: runBatchEvaluation(
+        config,
+        policy,
+        Math.min(80, Math.max(4, fullRuns)),
+      ),
       fullMission: planners.map((planner) => ({
         planner,
         continuity: totals[planner].continuity / fullRuns,
         revisitCompliance: totals[planner].revisitCompliance / fullRuns,
         weightedGapSeconds: totals[planner].weightedGapSeconds / fullRuns,
+        upperBoundAttainment: totals[planner].upperBoundAttainment / fullRuns,
         recoverySeconds: totals[planner].recovered
           ? totals[planner].recoverySeconds / totals[planner].recovered
           : null,

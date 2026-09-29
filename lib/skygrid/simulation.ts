@@ -1,26 +1,30 @@
+import { bearingDegrees, haversineMeters, polylineDistance } from './geo';
 import {
-  bearingDegrees,
-  haversineMeters,
-  moveToward,
-  polylineDistance,
-} from './geo';
-import {
+  DRONE_PROFILES,
   DEFAULT_DRONE_PROFILE_ID,
   getDroneProfile,
   profileSimulationValues,
 } from './drone-profiles';
 import { mulberry32 } from './random';
 import {
+  moveAlongObstacleAwareRoute,
+  obstacleAwareDistance,
+} from './pathfinding';
+import {
   assignRoutes,
   estimateSortieEnergy,
   type CandidateDqn,
+  type RoutePlanningOptions,
 } from './rl-policy';
 import type {
   BatchResult,
+  CapacityEstimate,
   Drone,
+  GeoPoint,
   MissionEvent,
   MissionMetrics,
   MissionState,
+  NoFlyZone,
   PlannerKind,
   ScenarioConfig,
   ScenarioComparisonResult,
@@ -45,6 +49,185 @@ const COLORS = [
   '#fb7185',
   '#60a5fa',
 ];
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function mean(values: number[]): number {
+  return values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : 0;
+}
+
+function offsetPoint(
+  center: GeoPoint,
+  distanceKm: number,
+  angle: number,
+): GeoPoint {
+  return {
+    lat: center.lat + (Math.sin(angle) * distanceKm) / 111.32,
+    lng:
+      center.lng +
+      (Math.cos(angle) * distanceKm) /
+        Math.max(20, 111.32 * Math.cos((center.lat * Math.PI) / 180)),
+  };
+}
+
+function createWaypoints(
+  config: ScenarioConfig,
+  random: () => number,
+): Waypoint[] {
+  const layout = config.layout ?? 'mixed';
+  const clusterCount = clamp(Math.round(config.waypointCount / 6), 2, 4);
+  const clusterCenters = Array.from({ length: clusterCount }, (_, index) =>
+    offsetPoint(
+      CENTER,
+      0.9 + random() * 2.4,
+      (index / clusterCount) * Math.PI * 2 + random() * 0.55,
+    ),
+  );
+  return Array.from({ length: config.waypointCount }, (_, index) => {
+    let point: GeoPoint;
+    if (layout === 'ring') {
+      const ring = index % 3;
+      const angle =
+        (index / Math.max(1, config.waypointCount)) * Math.PI * 2 +
+        random() * 0.35;
+      point = offsetPoint(CENTER, 0.55 + ring * 0.17 + random() * 0.13, angle);
+    } else {
+      const clustered = layout === 'clustered' || random() < 0.72;
+      if (clustered) {
+        const cluster = clusterCenters[index % clusterCenters.length];
+        point = offsetPoint(
+          cluster,
+          0.08 + random() * 0.52,
+          random() * Math.PI * 2,
+        );
+      } else {
+        point = offsetPoint(
+          CENTER,
+          0.7 + random() * 3.6,
+          random() * Math.PI * 2,
+        );
+      }
+    }
+    const priorityRoll = random();
+    const priority =
+      priorityRoll < 0.12
+        ? 5
+        : priorityRoll < 0.3
+          ? 4
+          : priorityRoll < 0.58
+            ? 3
+            : priorityRoll < 0.82
+              ? 2
+              : 1;
+    const revisitCenter = 300 - (priority - 1) * 35;
+    return {
+      id: `RP-${String(index + 1).padStart(2, '0')}`,
+      ...point,
+      priority,
+      revisitSec: Math.round(
+        clamp(revisitCenter + (random() - 0.5) * 90, 120, 300),
+      ),
+      dwellSec: 20 + Math.floor(random() * 61),
+      lastVisited: 0,
+      visitedCount: 0,
+    };
+  });
+}
+
+function createNoFlyZones(
+  count: number,
+  waypoints: Waypoint[],
+  random: () => number,
+): NoFlyZone[] {
+  if (!count || !waypoints.length) return [];
+  const sorted = [...waypoints].sort(
+    (a, b) => haversineMeters(BASE, b) - haversineMeters(BASE, a),
+  );
+  return Array.from({ length: count }, (_, index) => {
+    const target = sorted[index % sorted.length];
+    const fraction = 0.38 + random() * 0.22;
+    const center = {
+      lat: BASE.lat + (target.lat - BASE.lat) * fraction,
+      lng: BASE.lng + (target.lng - BASE.lng) * fraction,
+    };
+    const bearing = Math.atan2(target.lat - BASE.lat, target.lng - BASE.lng);
+    const halfAlongKm = 0.18 + random() * 0.18;
+    const halfAcrossKm = 0.35 + random() * 0.35;
+    const along = offsetPoint(center, halfAlongKm, bearing);
+    const behind = offsetPoint(center, halfAlongKm, bearing + Math.PI);
+    return {
+      id: `NFZ-${String(index + 1).padStart(2, '0')}`,
+      name: `비행제한구역 ${index + 1}`,
+      points: [
+        offsetPoint(along, halfAcrossKm, bearing + Math.PI / 2),
+        offsetPoint(along, halfAcrossKm, bearing - Math.PI / 2),
+        offsetPoint(behind, halfAcrossKm, bearing - Math.PI / 2),
+        offsetPoint(behind, halfAcrossKm, bearing + Math.PI / 2),
+      ],
+    };
+  });
+}
+
+export function theoreticalCapacityEstimate(
+  waypoints: Waypoint[],
+  actualDrones: number,
+  averageSpeedMps: number,
+  noFlyZones: NoFlyZone[] = [],
+): CapacityEstimate {
+  if (!waypoints.length) {
+    return {
+      requiredVisitRateHz: 0,
+      averageRevisitSec: 0,
+      averageTravelSec: 0,
+      averageDwellSec: 0,
+      averageServiceSec: 0,
+      minimumRequiredDrones: 0,
+      actualDrones,
+      loadFactor: 1,
+      theoreticalContinuityUpperBound: 100,
+    };
+  }
+  const averageRevisitSec = mean(
+    waypoints.map((waypoint) => waypoint.revisitSec),
+  );
+  const averageDwellSec = mean(waypoints.map((waypoint) => waypoint.dwellSec));
+  const averageTravelSec = mean(
+    waypoints.map((waypoint) => {
+      const peers = waypoints.filter(
+        (candidate) => candidate.id !== waypoint.id,
+      );
+      const distance = peers.length
+        ? Math.min(
+            ...peers.map((candidate) =>
+              obstacleAwareDistance(waypoint, candidate, noFlyZones),
+            ),
+          )
+        : obstacleAwareDistance(BASE, waypoint, noFlyZones);
+      return distance / Math.max(1, averageSpeedMps);
+    }),
+  );
+  const requiredVisitRateHz = waypoints.length / averageRevisitSec;
+  const averageServiceSec = averageTravelSec + averageDwellSec;
+  const minimumRequiredDrones = requiredVisitRateHz * averageServiceSec;
+  const loadFactor = minimumRequiredDrones
+    ? actualDrones / minimumRequiredDrones
+    : 1;
+  return {
+    requiredVisitRateHz,
+    averageRevisitSec,
+    averageTravelSec,
+    averageDwellSec,
+    averageServiceSec,
+    minimumRequiredDrones,
+    actualDrones,
+    loadFactor,
+    theoreticalContinuityUpperBound: Math.min(100, loadFactor * 100),
+  };
+}
 
 function operationalFailureDroneId(
   state: MissionState,
@@ -93,18 +276,35 @@ function continuityAt(time: number, waypoints: Waypoint[]): number {
   return (coveredPriority / priorityTotal) * 100;
 }
 
+export function cumulativeWeightedGapRate(
+  time: number,
+  waypoints: Waypoint[],
+): number {
+  return waypoints.reduce((sum, waypoint) => {
+    const overdueSeconds = Math.max(
+      0,
+      time - waypoint.lastVisited - waypoint.revisitSec,
+    );
+    return (
+      sum +
+      waypoint.priority * (overdueSeconds / Math.max(1, waypoint.revisitSec))
+    );
+  }, 0);
+}
+
 function headingTo(from: Drone, to: { lat: number; lng: number }): number {
   const y = Math.sin(((to.lng - from.lng) * Math.PI) / 180);
   const x = Math.sin(((to.lat - from.lat) * Math.PI) / 180);
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-function returnEnergy(drone: Drone): number {
+function returnEnergy(drone: Drone, noFlyZones: NoFlyZone[] = []): number {
   return (
-    (haversineMeters(drone, {
-      lat: drone.homeLat,
-      lng: drone.homeLng,
-    }) /
+    (obstacleAwareDistance(
+      drone,
+      { lat: drone.homeLat, lng: drone.homeLng },
+      noFlyZones,
+    ) /
       1000) *
     drone.consumptionPerKm
   );
@@ -124,57 +324,77 @@ function sendHome(drone: Drone): Drone {
 export function createMission(
   config: ScenarioConfig,
   policy: CandidateDqn,
+  planningOptions?: RoutePlanningOptions,
 ): MissionState {
   const random = mulberry32(config.randomSeed);
-  const drones: Drone[] = Array.from(
-    { length: config.droneCount },
-    (_, index) => {
-      const profile = getDroneProfile(DEFAULT_DRONE_PROFILE_ID);
-      const performance = profileSimulationValues(profile);
-      const stagingOffset = (index - (config.droneCount - 1) / 2) * 0.00007;
-      return {
-        id: `UAV-${String(index + 1).padStart(2, '0')}`,
-        ...performance,
-        color: COLORS[index % COLORS.length],
-        lat: BASE.lat + stagingOffset,
-        lng: BASE.lng + stagingOffset * 0.7,
-        homeLat: BASE.lat,
-        homeLng: BASE.lng,
-        turnaroundRemainingSec: 0,
-        dwellRemainingSec: 0,
-        phase: 'base',
-        sortieCount: 0,
-        minimumBattery: performance.maxBattery,
-        status: 'ready',
-        route: [],
-        routeIndex: 0,
-        totalDistanceM: 0,
-        heading: 0,
-      };
-    },
+  const waypoints = createWaypoints(config, random);
+  const noFlyZones = createNoFlyZones(
+    config.noFlyZoneCount ?? (config.layout === 'ring' ? 0 : 2),
+    waypoints,
+    random,
   );
-  const waypoints: Waypoint[] = Array.from(
-    { length: config.waypointCount },
-    (_, index) => {
-      const ring = index % 3;
-      const angle =
-        (index / config.waypointCount) * Math.PI * 2 + random() * 0.35;
-      const radiusLat = 0.0048 + ring * 0.0015 + random() * 0.0012;
-      const radiusLng = radiusLat * 1.3;
-      return {
-        id: `RP-${String(index + 1).padStart(2, '0')}`,
-        lat: CENTER.lat + Math.sin(angle) * radiusLat,
-        lng: CENTER.lng + Math.cos(angle) * radiusLng,
-        priority: 1 + Math.floor(random() * 5),
-        revisitSec: 120 + Math.floor(random() * 180),
-        dwellSec: 20 + Math.floor(random() * 31),
-        lastVisited: 0,
-        visitedCount: 0,
-      };
-    },
+  const profilePool = config.mixedFleet
+    ? DRONE_PROFILES
+    : [getDroneProfile(DEFAULT_DRONE_PROFILE_ID)];
+  const nominalAverageSpeed = mean(
+    profilePool.map((profile) => profile.cruiseSpeedMps),
   );
-  const noFlyZones: MissionState['noFlyZones'] = [];
-  const planned = assignRoutes(drones, waypoints, 0, config.planner, policy);
+  const provisionalCapacity = theoreticalCapacityEstimate(
+    waypoints,
+    config.droneCount,
+    nominalAverageSpeed,
+    noFlyZones,
+  );
+  const droneCount =
+    config.loadFactor !== undefined && waypoints.length
+      ? clamp(
+          Math.ceil(
+            provisionalCapacity.minimumRequiredDrones * config.loadFactor,
+          ),
+          1,
+          12,
+        )
+      : config.droneCount;
+  const drones: Drone[] = Array.from({ length: droneCount }, (_, index) => {
+    const profile = profilePool[index % profilePool.length];
+    const performance = profileSimulationValues(profile);
+    const stagingOffset = (index - (droneCount - 1) / 2) * 0.00007;
+    return {
+      id: `UAV-${String(index + 1).padStart(2, '0')}`,
+      ...performance,
+      color: COLORS[index % COLORS.length],
+      lat: BASE.lat + stagingOffset,
+      lng: BASE.lng + stagingOffset * 0.7,
+      homeLat: BASE.lat,
+      homeLng: BASE.lng,
+      turnaroundRemainingSec: 0,
+      dwellRemainingSec: 0,
+      phase: 'base',
+      sortieCount: 0,
+      minimumBattery: performance.maxBattery,
+      status: 'ready',
+      route: [],
+      routeIndex: 0,
+      totalDistanceM: 0,
+      heading: 0,
+    };
+  });
+  const averageSpeed = mean(drones.map((drone) => drone.speedMps));
+  const capacityEstimate = theoreticalCapacityEstimate(
+    waypoints,
+    droneCount,
+    averageSpeed || nominalAverageSpeed,
+    noFlyZones,
+  );
+  const planned = assignRoutes(
+    drones,
+    waypoints,
+    0,
+    config.planner,
+    policy,
+    noFlyZones,
+    planningOptions,
+  );
   return {
     time: 0,
     running: false,
@@ -185,13 +405,13 @@ export function createMission(
     base: { ...BASE },
     noFlyZones,
     events:
-      config.droneCount || config.waypointCount
+      droneCount || config.waypointCount
         ? [
             makeEvent(
               0,
               'system',
               '가상 임무 준비',
-              `${config.droneCount}대 · 정찰지점 ${config.waypointCount}개`,
+              `${droneCount}대 · 정찰지점 ${config.waypointCount}개 · 부하율 ${(capacityEstimate.loadFactor * 100).toFixed(0)}%`,
             ),
           ]
         : [],
@@ -210,6 +430,7 @@ export function createMission(
     recoveredAt: null,
     replanCount: 0,
     inferenceMs: 0,
+    capacityEstimate,
   };
 }
 
@@ -219,6 +440,7 @@ export function triggerFailure(
   planner: PlannerKind,
   policy: CandidateDqn,
   reason = '운용자 이탈 판정',
+  planningOptions?: RoutePlanningOptions,
 ): MissionState {
   const start = performance.now();
   const failed = state.drones.find(
@@ -248,7 +470,15 @@ export function triggerFailure(
     ...waypoint,
     assignedDrone: undefined,
   }));
-  const planned = assignRoutes(drones, waypoints, state.time, planner, policy);
+  const planned = assignRoutes(
+    drones,
+    waypoints,
+    state.time,
+    planner,
+    policy,
+    state.noFlyZones,
+    planningOptions,
+  );
   const inferenceMs = Math.max(0.1, performance.now() - start);
   const currentContinuity = continuityAt(state.time, state.waypoints);
   return {
@@ -315,6 +545,7 @@ export function restoreDrone(
     state.time,
     planner,
     policy,
+    state.noFlyZones,
   );
   return {
     ...state,
@@ -340,14 +571,7 @@ export function advanceFieldMission(
   if (!state.running || state.completed) return state;
   const time = state.time + deltaSeconds;
   const continuity = continuityAt(time, state.waypoints);
-  const weightedGapRate = state.waypoints.reduce(
-    (sum, waypoint) =>
-      sum +
-      (time - waypoint.lastVisited > waypoint.revisitSec
-        ? waypoint.priority
-        : 0),
-    0,
-  );
+  const weightedGapRate = cumulativeWeightedGapRate(time, state.waypoints);
   return {
     ...state,
     time,
@@ -400,10 +624,7 @@ export function assignFieldRoutes(
   policy: CandidateDqn,
   excludedWaypointIds: string[] = [],
 ): ReturnType<typeof assignRoutes> {
-  const candidates = fieldPlanningWaypoints(
-    waypoints,
-    excludedWaypointIds,
-  );
+  const candidates = fieldPlanningWaypoints(waypoints, excludedWaypointIds);
   const planned = assignRoutes(
     drones,
     candidates,
@@ -412,10 +633,7 @@ export function assignFieldRoutes(
     policy,
   );
   const assignment = new Map(
-    planned.waypoints.map((waypoint) => [
-      waypoint.id,
-      waypoint.assignedDrone,
-    ]),
+    planned.waypoints.map((waypoint) => [waypoint.id, waypoint.assignedDrone]),
   );
   return {
     drones: planned.drones,
@@ -526,12 +744,7 @@ export function reportFieldWaypointVisit(
       onTimeRevisits: state.onTimeRevisits + (onTime ? 1 : 0),
       replanCount: state.replanCount + 1,
       events: [
-        makeEvent(
-          state.time,
-          'visit',
-          `${waypointId} 정찰 완료`,
-          detail,
-        ),
+        makeEvent(state.time, 'visit', `${waypointId} 정찰 완료`, detail),
         ...state.events,
       ].slice(0, 18),
     },
@@ -543,6 +756,7 @@ export function advanceMission(
   deltaSeconds: number,
   config: ScenarioConfig,
   policy: CandidateDqn,
+  planningOptions?: RoutePlanningOptions,
 ): MissionState {
   if (!state.running || state.completed) return state;
   let next: MissionState = { ...state, time: state.time + deltaSeconds };
@@ -553,6 +767,7 @@ export function advanceMission(
       config.planner,
       policy,
       '설정된 이탈 시점',
+      planningOptions,
     );
   }
 
@@ -616,9 +831,15 @@ export function advanceMission(
     if (drone.status === 'returning') {
       const home = { lat: drone.homeLat, lng: drone.homeLng };
       const travel = drone.speedMps * deltaSeconds;
-      const distance = haversineMeters(drone, home);
-      const moved = Math.min(travel, distance);
-      const position = moveToward(drone, home, moved);
+      const distance = obstacleAwareDistance(drone, home, next.noFlyZones);
+      const movement = moveAlongObstacleAwareRoute(
+        drone,
+        home,
+        Math.min(travel, distance),
+        next.noFlyZones,
+      );
+      const moved = movement.distanceMoved;
+      const position = movement.position;
       const battery = Math.max(
         0,
         drone.battery - (moved / 1000) * drone.consumptionPerKm,
@@ -626,7 +847,7 @@ export function advanceMission(
       const updated: Drone = {
         ...drone,
         ...position,
-        heading: headingTo(drone, home),
+        heading: headingTo(drone, movement.headingTarget),
         battery,
         minimumBattery: Math.min(drone.minimumBattery, battery),
         totalDistanceM: drone.totalDistanceM + moved,
@@ -696,9 +917,12 @@ export function advanceMission(
       return updated;
     }
 
-    const required = estimateSortieEnergy(drone, target);
+    const required = estimateSortieEnergy(drone, target, next.noFlyZones);
     if (drone.battery - required < drone.reserveBattery) {
-      if (drone.battery - returnEnergy(drone) < drone.reserveBattery) {
+      if (
+        drone.battery - returnEnergy(drone, next.noFlyZones) <
+        drone.reserveBattery
+      ) {
         reserveViolations += 1;
       }
       tickEvents.push(
@@ -713,9 +937,15 @@ export function advanceMission(
     }
 
     const travel = drone.speedMps * deltaSeconds;
-    const distance = haversineMeters(drone, target);
-    const moved = Math.min(travel, distance);
-    const position = moveToward(drone, target, moved);
+    const distance = obstacleAwareDistance(drone, target, next.noFlyZones);
+    const movement = moveAlongObstacleAwareRoute(
+      drone,
+      target,
+      Math.min(travel, distance),
+      next.noFlyZones,
+    );
+    const moved = movement.distanceMoved;
+    const position = movement.position;
     const battery = Math.max(
       0,
       drone.battery - (moved / 1000) * drone.consumptionPerKm,
@@ -723,7 +953,7 @@ export function advanceMission(
     const updated: Drone = {
       ...drone,
       ...position,
-      heading: headingTo(drone, target),
+      heading: headingTo(drone, movement.headingTarget),
       battery,
       minimumBattery: Math.min(drone.minimumBattery, battery),
       totalDistanceM: drone.totalDistanceM + moved,
@@ -781,6 +1011,8 @@ export function advanceMission(
       next.time,
       config.planner,
       policy,
+      next.noFlyZones,
+      planningOptions,
     );
     const activeAtBase = (drone: Drone) =>
       haversineMeters(drone, {
@@ -820,14 +1052,7 @@ export function advanceMission(
   }
 
   const continuity = continuityAt(next.time, waypoints);
-  const weightedGapRate = waypoints.reduce(
-    (sum, waypoint) =>
-      sum +
-      (next.time - waypoint.lastVisited > waypoint.revisitSec
-        ? waypoint.priority
-        : 0),
-    0,
-  );
+  const weightedGapRate = cumulativeWeightedGapRate(next.time, waypoints);
   let recoveredAt = next.recoveredAt;
   if (
     recoveredAt === null &&
@@ -903,9 +1128,26 @@ export function missionMetrics(state: MissionState): MissionMetrics {
   const operationalDrones = state.drones.filter(
     (drone) => drone.status !== 'failed',
   );
+  const capacityEstimate = theoreticalCapacityEstimate(
+    state.waypoints,
+    operationalDrones.length,
+    mean(operationalDrones.map((drone) => drone.speedMps)) || 1,
+    state.noFlyZones,
+  );
   const priorityTime =
     state.waypoints.reduce((sum, waypoint) => sum + waypoint.priority, 0) *
     Math.max(1, state.time);
+  const measuredContinuity =
+    state.failureTime === null
+      ? averageContinuity
+      : state.postFailureObservationSeconds
+        ? state.postFailureContinuityIntegral /
+          state.postFailureObservationSeconds
+        : continuity;
+  const theoreticalUpperBound = Math.max(
+    0.1,
+    capacityEstimate.theoreticalContinuityUpperBound,
+  );
   return {
     continuity,
     averageContinuity,
@@ -951,6 +1193,14 @@ export function missionMetrics(state: MissionState): MissionMetrics {
       (sum, waypoint) => sum + waypoint.visitedCount,
       0,
     ),
+    minimumRequiredDrones: capacityEstimate.minimumRequiredDrones,
+    loadFactor: capacityEstimate.loadFactor,
+    theoreticalContinuityUpperBound: theoreticalUpperBound,
+    upperBoundAttainment: clamp(
+      (measuredContinuity / theoreticalUpperBound) * 100,
+      0,
+      100,
+    ),
   };
 }
 
@@ -962,7 +1212,7 @@ export function runBatchEvaluation(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '제약 인지 잔차 DQN' },
+    { kind: 'rl', label: '제약 인지 DQN' },
   ];
   return planners.map(({ kind, label }) => {
     const totals = {
@@ -970,6 +1220,9 @@ export function runBatchEvaluation(
       weightedGap: 0,
       distance: 0,
       completion: 0,
+      upperBoundAttainment: 0,
+      theoreticalUpperBound: 0,
+      loadFactor: 0,
     };
     for (let run = 0; run < runs; run += 1) {
       let runConfig = {
@@ -1000,6 +1253,9 @@ export function runBatchEvaluation(
       totals.weightedGap += result.weightedGapSeconds;
       totals.distance += result.totalDistanceKm;
       totals.completion += result.coverage;
+      totals.upperBoundAttainment += result.upperBoundAttainment;
+      totals.theoreticalUpperBound += result.theoreticalContinuityUpperBound;
+      totals.loadFactor += result.loadFactor;
     }
     return {
       planner: kind,
@@ -1008,6 +1264,9 @@ export function runBatchEvaluation(
       weightedGap: totals.weightedGap / runs,
       distance: totals.distance / runs,
       completion: totals.completion / runs,
+      upperBoundAttainment: totals.upperBoundAttainment / runs,
+      theoreticalUpperBound: totals.theoreticalUpperBound / runs,
+      loadFactor: totals.loadFactor / runs,
     };
   });
 }
@@ -1039,7 +1298,7 @@ export function runScenarioComparison(
   const planners: { kind: PlannerKind; label: string }[] = [
     { kind: 'nearest', label: '최근접 우선' },
     { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '제약 인지 잔차 DQN' },
+    { kind: 'rl', label: '제약 인지 DQN' },
   ];
   return planners.map(({ kind, label }) => {
     const base = cloneMissionState(initialState);
@@ -1060,7 +1319,14 @@ export function runScenarioComparison(
       ...waypoint,
       assignedDrone: undefined,
     }));
-    const planned = assignRoutes(drones, waypoints, base.time, kind, policy);
+    const planned = assignRoutes(
+      drones,
+      waypoints,
+      base.time,
+      kind,
+      policy,
+      base.noFlyZones,
+    );
     const plannerConfig: ScenarioConfig = {
       ...config,
       durationSec: base.time + durationSeconds,
@@ -1117,6 +1383,10 @@ export function runScenarioComparison(
       distanceKm: metrics.totalDistanceKm,
       averageBattery: metrics.averageBattery,
       returnCount: metrics.returnCount,
+      upperBoundAttainment: metrics.upperBoundAttainment,
+      theoreticalUpperBound: metrics.theoreticalContinuityUpperBound,
+      minimumRequiredDrones: metrics.minimumRequiredDrones,
+      loadFactor: metrics.loadFactor,
     };
   });
 }
