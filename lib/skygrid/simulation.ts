@@ -1204,71 +1204,133 @@ export function missionMetrics(state: MissionState): MissionMetrics {
   };
 }
 
+const BATCH_PLANNERS: { kind: PlannerKind; label: string }[] = [
+  { kind: 'nearest', label: '최근접 우선' },
+  { kind: 'priority', label: '중요도 우선' },
+  { kind: 'rl', label: '제약 인지 DQN' },
+];
+
+type BatchTotals = {
+  continuity: number;
+  weightedGap: number;
+  distance: number;
+  completion: number;
+  upperBoundAttainment: number;
+  theoreticalUpperBound: number;
+  loadFactor: number;
+};
+
+function emptyBatchTotals(): BatchTotals {
+  return {
+    continuity: 0,
+    weightedGap: 0,
+    distance: 0,
+    completion: 0,
+    upperBoundAttainment: 0,
+    theoreticalUpperBound: 0,
+    loadFactor: 0,
+  };
+}
+
+function addBatchResult(totals: BatchTotals, result: MissionMetrics): void {
+  totals.continuity +=
+    result.postFailureAverageContinuity ?? result.averageContinuity;
+  totals.weightedGap += result.weightedGapSeconds;
+  totals.distance += result.totalDistanceKm;
+  totals.completion += result.coverage;
+  totals.upperBoundAttainment += result.upperBoundAttainment;
+  totals.theoreticalUpperBound += result.theoreticalContinuityUpperBound;
+  totals.loadFactor += result.loadFactor;
+}
+
+function finalizeBatchResult(
+  planner: { kind: PlannerKind; label: string },
+  totals: BatchTotals,
+  runs: number,
+): BatchResult {
+  const denominator = Math.max(1, runs);
+  return {
+    planner: planner.kind,
+    label: planner.label,
+    continuity: totals.continuity / denominator,
+    weightedGap: totals.weightedGap / denominator,
+    distance: totals.distance / denominator,
+    completion: totals.completion / denominator,
+    upperBoundAttainment: totals.upperBoundAttainment / denominator,
+    theoreticalUpperBound: totals.theoreticalUpperBound / denominator,
+    loadFactor: totals.loadFactor / denominator,
+  };
+}
+
+function runBatchMission(
+  config: ScenarioConfig,
+  policy: CandidateDqn,
+  kind: PlannerKind,
+  run: number,
+): MissionMetrics {
+  let runConfig = {
+    ...config,
+    planner: kind,
+    randomSeed: config.randomSeed + run * 17,
+  };
+  let mission = createMission(runConfig, policy);
+  runConfig = {
+    ...runConfig,
+    failureDroneId: operationalFailureDroneId(
+      mission,
+      runConfig.failureDroneId,
+    ),
+  };
+  mission = { ...mission, running: true };
+  while (mission.running && !mission.completed) {
+    mission = advanceMission(
+      mission,
+      Math.min(5, runConfig.durationSec - mission.time),
+      runConfig,
+      policy,
+    );
+  }
+  return missionMetrics(mission);
+}
+
 export function runBatchEvaluation(
   config: ScenarioConfig,
   policy: CandidateDqn,
   runs = 80,
 ): BatchResult[] {
-  const planners: { kind: PlannerKind; label: string }[] = [
-    { kind: 'nearest', label: '최근접 우선' },
-    { kind: 'priority', label: '중요도 우선' },
-    { kind: 'rl', label: '제약 인지 DQN' },
-  ];
-  return planners.map(({ kind, label }) => {
-    const totals = {
-      continuity: 0,
-      weightedGap: 0,
-      distance: 0,
-      completion: 0,
-      upperBoundAttainment: 0,
-      theoreticalUpperBound: 0,
-      loadFactor: 0,
-    };
+  return BATCH_PLANNERS.map((planner) => {
+    const totals = emptyBatchTotals();
     for (let run = 0; run < runs; run += 1) {
-      let runConfig = {
-        ...config,
-        planner: kind,
-        randomSeed: config.randomSeed + run * 17,
-      };
-      let mission = createMission(runConfig, policy);
-      runConfig = {
-        ...runConfig,
-        failureDroneId: operationalFailureDroneId(
-          mission,
-          runConfig.failureDroneId,
-        ),
-      };
-      mission = { ...mission, running: true };
-      while (mission.running && !mission.completed) {
-        mission = advanceMission(
-          mission,
-          Math.min(5, runConfig.durationSec - mission.time),
-          runConfig,
-          policy,
-        );
-      }
-      const result = missionMetrics(mission);
-      totals.continuity +=
-        result.postFailureAverageContinuity ?? result.averageContinuity;
-      totals.weightedGap += result.weightedGapSeconds;
-      totals.distance += result.totalDistanceKm;
-      totals.completion += result.coverage;
-      totals.upperBoundAttainment += result.upperBoundAttainment;
-      totals.theoreticalUpperBound += result.theoreticalContinuityUpperBound;
-      totals.loadFactor += result.loadFactor;
+      addBatchResult(totals, runBatchMission(config, policy, planner.kind, run));
     }
-    return {
-      planner: kind,
-      label,
-      continuity: totals.continuity / runs,
-      weightedGap: totals.weightedGap / runs,
-      distance: totals.distance / runs,
-      completion: totals.completion / runs,
-      upperBoundAttainment: totals.upperBoundAttainment / runs,
-      theoreticalUpperBound: totals.theoreticalUpperBound / runs,
-      loadFactor: totals.loadFactor / runs,
-    };
+    return finalizeBatchResult(planner, totals, runs);
   });
+}
+
+export async function runBatchEvaluationAsync(
+  config: ScenarioConfig,
+  policy: CandidateDqn,
+  runs = 80,
+  onProgress?: (completed: number, total: number) => void,
+): Promise<BatchResult[]> {
+  const totals = BATCH_PLANNERS.map(() => emptyBatchTotals());
+  const total = BATCH_PLANNERS.length * runs;
+  let completed = 0;
+  for (let plannerIndex = 0; plannerIndex < BATCH_PLANNERS.length; plannerIndex += 1) {
+    const planner = BATCH_PLANNERS[plannerIndex];
+    for (let run = 0; run < runs; run += 1) {
+      addBatchResult(
+        totals[plannerIndex],
+        runBatchMission(config, policy, planner.kind, run),
+      );
+      completed += 1;
+      onProgress?.(completed, total);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  return BATCH_PLANNERS.map((planner, index) =>
+    finalizeBatchResult(planner, totals[index], runs),
+  );
 }
 
 export function cloneMissionState(state: MissionState): MissionState {
