@@ -123,6 +123,7 @@ import {
   reportFieldWaypointVisit,
   restoreDrone,
   runBatchEvaluation,
+  runBatchEvaluationAsync,
   runScenarioComparison,
   triggerFailure,
 } from '@/lib/skygrid/simulation';
@@ -371,9 +372,9 @@ export default function SkygridApp() {
   const [validationPlan, setValidationPlan] = useState<MissionPlanFile | null>(
     null,
   );
-  const [batchResults, setBatchResults] = useState(() =>
-    runBatchEvaluation(EVALUATION_CONFIG, policyBundle.policy, 48),
-  );
+  const [batchResults, setBatchResults] = useState<
+    ReturnType<typeof runBatchEvaluation>
+  >([]);
   const [comparisonBaseline, setComparisonBaseline] =
     useState<MissionState | null>(null);
   const [comparisonConfig, setComparisonConfig] =
@@ -409,7 +410,6 @@ export default function SkygridApp() {
     const timer = window.setTimeout(() => {
       setPolicyBundle(saved);
       setMission(createMission(DEFAULT_CONFIG, saved.policy));
-      setBatchResults(runBatchEvaluation(EVALUATION_CONFIG, saved.policy, 48));
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -1664,16 +1664,24 @@ export default function SkygridApp() {
   const runBatch = useCallback(() => {
     setBusyAction('batch');
     window.setTimeout(() => {
-      setBatchResults(
-        runBatchEvaluation(
-          config.droneCount && config.waypointCount
-            ? config
-            : EVALUATION_CONFIG,
-          policyBundle.policy,
-          100,
-        ),
-      );
-      setBusyAction(null);
+      void (async () => {
+        try {
+          const evaluationConfig =
+            config.droneCount && config.waypointCount
+              ? config
+              : EVALUATION_CONFIG;
+          const results = await runBatchEvaluationAsync(
+            evaluationConfig,
+            policyBundle.policy,
+            100,
+          );
+          setBatchResults(results);
+        } catch {
+          setFieldNotice('성능 평가를 완료하지 못했습니다. 다시 실행해 주세요.');
+        } finally {
+          setBusyAction(null);
+        }
+      })();
     }, 40);
   }, [config, policyBundle.policy]);
 
@@ -3904,7 +3912,7 @@ function ComparisonRail({
     <div className="rail-section comparison-section">
       <div className="section-heading">
         <span>운용 방식 비교</span>
-        <span>100회 반복</span>
+        <span>{results.length ? '100회 반복' : '실행 대기'}</span>
       </div>
       <div className="comparison-chart">
         <ResponsiveContainer
@@ -3969,7 +3977,11 @@ function ComparisonRail({
         disabled={busy}
       >
         <RefreshCw className={busy ? 'animate-spin' : ''} />
-        {busy ? '100회 계산 중' : '무작위 100회 다시 평가'}
+        {busy
+          ? '100회 계산 중'
+          : results.length
+            ? '무작위 100회 다시 평가'
+            : '무작위 100회 평가 시작'}
       </Button>
       <div className="scenario-comparison">
         <div className="section-heading mt-4">
