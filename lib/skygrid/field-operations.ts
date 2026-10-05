@@ -2,6 +2,7 @@ import { bearingDegrees, haversineMeters } from './geo';
 import type {
   Drone,
   DroneProfileId,
+  FieldMissionRecord,
   GeoPoint,
   MissionState,
   PlannerKind,
@@ -48,6 +49,40 @@ export interface FieldRouteSummary {
   targetIds: string[];
   distanceM: number;
   estimatedSeconds: number;
+}
+
+export function parseFieldMissionRecord(text: string): FieldMissionRecord {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('현장 임무 기록 JSON을 읽지 못했습니다.');
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('현장 임무 기록 형식이 아닙니다.');
+  }
+  const record = parsed as Partial<FieldMissionRecord>;
+  if (
+    record.schema !== 'skygrid.field-record.v1' ||
+    !record.initialState ||
+    !Array.isArray(record.frames) ||
+    record.frames.length < 2
+  ) {
+    throw new Error('SKYGRID 현장 임무 기록 형식이 아닙니다.');
+  }
+  if (
+    typeof record.startedAt !== 'string' ||
+    record.frames.some(
+      (frame) =>
+        !frame ||
+        typeof frame !== 'object' ||
+        !('state' in frame) ||
+        !frame.state,
+    )
+  ) {
+    throw new Error('현장 임무 기록에 재현할 상태가 없습니다.');
+  }
+  return record as FieldMissionRecord;
 }
 
 function remainingTargets(mission: MissionState, drone: Drone) {

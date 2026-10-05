@@ -137,6 +137,33 @@ export interface MissionState {
   capacityEstimate: CapacityEstimate;
 }
 
+export type FieldMissionRecordAction =
+  | 'start'
+  | 'stop'
+  | 'visit'
+  | 'dropout'
+  | 'replan';
+
+export interface FieldMissionRecordFrame {
+  sequence: number;
+  time: number;
+  action: FieldMissionRecordAction;
+  title: string;
+  detail: string;
+  droneId?: string;
+  waypointId?: string;
+  state: MissionState;
+}
+
+export interface FieldMissionRecord {
+  schema: 'skygrid.field-record.v1';
+  createdAt: string;
+  startedAt: string;
+  endedAt: string | null;
+  initialState: MissionState;
+  frames: FieldMissionRecordFrame[];
+}
+
 export interface MissionMetrics {
   continuity: number;
   averageContinuity: number;

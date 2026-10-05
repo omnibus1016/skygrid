@@ -89,6 +89,7 @@ import {
   buildGuidanceCsv,
   buildLitchiCsv,
   buildMissionPlanFile,
+  parseFieldMissionRecord,
   parseMissionPlanFile,
   plannedPathForDrone,
   plannedPathFromPlan,
@@ -132,6 +133,9 @@ import type {
   Drone,
   DroneProfileId,
   FlightLog,
+  FieldMissionRecord,
+  FieldMissionRecordAction,
+  FieldMissionRecordFrame,
   GeoPoint,
   MissionState,
   PlannerKind,
@@ -185,6 +189,25 @@ function droneOperationalLabel(drone: Drone): string {
     return drone.turnaroundRemainingSec > 0 ? '출격 준비' : '기지 대기';
   if (drone.phase === 'dwell') return '지점 정찰';
   return '목표 이동';
+}
+
+function makeFieldRecordFrame(
+  state: MissionState,
+  sequence: number,
+  action: FieldMissionRecordAction,
+  title: string,
+  detail: string,
+  ids: Pick<FieldMissionRecordFrame, 'droneId' | 'waypointId'> = {},
+): FieldMissionRecordFrame {
+  return {
+    sequence,
+    time: state.time,
+    action,
+    title,
+    detail,
+    ...ids,
+    state: cloneMissionState(state),
+  };
 }
 
 type PolicyBundle = {
@@ -367,6 +390,14 @@ export default function SkygridApp() {
   const [uploadError, setUploadError] = useState('');
   const [fieldNotice, setFieldNotice] = useState('');
   const [fieldPlanOpen, setFieldPlanOpen] = useState(false);
+  const [fieldRecording, setFieldRecording] = useState(false);
+  const [fieldRecord, setFieldRecord] = useState<FieldMissionRecord | null>(
+    null,
+  );
+  const [fieldReplay, setFieldReplay] =
+    useState<FieldMissionRecord | null>(null);
+  const [fieldReplayIndex, setFieldReplayIndex] = useState(0);
+  const [fieldReplayRunning, setFieldReplayRunning] = useState(false);
   const [logProfileId, setLogProfileId] =
     useState<DroneProfileId>('dji-mavic-pro');
   const [validationPlan, setValidationPlan] = useState<MissionPlanFile | null>(
@@ -403,6 +434,7 @@ export default function SkygridApp() {
     useState<DroneProfileId>(DEFAULT_DRONE_PROFILE_ID);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const planInputRef = useRef<HTMLInputElement>(null);
+  const fieldRecordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = readSavedPolicyBundle();
@@ -513,6 +545,53 @@ export default function SkygridApp() {
         .slice(0, 4)
     : [];
 
+  const appendFieldRecordFrame = useCallback(
+    (
+      state: MissionState,
+      action: FieldMissionRecordAction,
+      title: string,
+      detail: string,
+      ids: Pick<FieldMissionRecordFrame, 'droneId' | 'waypointId'> = {},
+    ) => {
+      if (mode !== 'field' || !fieldRecording) return;
+      setFieldRecord((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          frames: [
+            ...current.frames,
+            makeFieldRecordFrame(
+              state,
+              current.frames.length,
+              action,
+              title,
+              detail,
+              ids,
+            ),
+          ],
+        };
+      });
+    },
+    [fieldRecording, mode],
+  );
+
+  useEffect(() => {
+    if (!fieldReplayRunning || !fieldReplay) return;
+    const timer = window.setTimeout(() => {
+      const nextIndex = fieldReplayIndex + 1;
+      if (nextIndex >= fieldReplay.frames.length) {
+        setFieldReplayRunning(false);
+        return;
+      }
+      setFieldReplayIndex(nextIndex);
+      setMission({
+        ...cloneMissionState(fieldReplay.frames[nextIndex].state),
+        running: false,
+      });
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [fieldReplay, fieldReplayIndex, fieldReplayRunning]);
+
   useEffect(() => {
     if (!mission.running) return;
     const timer = window.setInterval(() => {
@@ -620,6 +699,11 @@ export default function SkygridApp() {
     applyScenario(nextConfig);
     setFieldNotice('현장 운용 지도를 초기화했습니다.');
     setValidationPlan(null);
+    setFieldRecording(false);
+    setFieldRecord(null);
+    setFieldReplay(null);
+    setFieldReplayIndex(0);
+    setFieldReplayRunning(false);
   }, [applyScenario, config]);
 
   const clearScenario = useCallback(() => {
@@ -719,34 +803,39 @@ export default function SkygridApp() {
   const replanNow = useCallback(
     (planner = operationalPlanner) => {
       const start = performance.now();
-      setMission((current) => {
-        const planned = planOperationalRoutes(
-          current.drones,
-          current.waypoints,
-          current.time,
-          planner,
-          current.noFlyZones,
-        );
-        return {
-          ...current,
-          drones: planned.drones,
-          waypoints: planned.waypoints,
-          replanCount: current.replanCount + 1,
-          inferenceMs: Math.max(1, performance.now() - start),
-          events: [
-            {
-              id: `manual-${Date.now()}`,
-              time: current.time,
-              kind: 'replan' as const,
-              title: '운용자 요청 재계획 완료',
-              detail: PLANNER_LABEL[planner],
-            },
-            ...current.events,
-          ].slice(0, 18),
-        };
-      });
+      const planned = planOperationalRoutes(
+        mission.drones,
+        mission.waypoints,
+        mission.time,
+        planner,
+        mission.noFlyZones,
+      );
+      const nextState = {
+        ...mission,
+        drones: planned.drones,
+        waypoints: planned.waypoints,
+        replanCount: mission.replanCount + 1,
+        inferenceMs: Math.max(1, performance.now() - start),
+        events: [
+          {
+            id: `manual-${Date.now()}`,
+            time: mission.time,
+            kind: 'replan' as const,
+            title: '운용자 요청 재계획 완료',
+            detail: PLANNER_LABEL[planner],
+          },
+          ...mission.events,
+        ].slice(0, 18),
+      };
+      setMission(nextState);
+      appendFieldRecordFrame(
+        nextState,
+        'replan',
+        '운용자 요청 재계획 완료',
+        PLANNER_LABEL[planner],
+      );
     },
-    [operationalPlanner, planOperationalRoutes],
+    [appendFieldRecordFrame, mission, operationalPlanner, planOperationalRoutes],
   );
 
   const createFieldFlightPlan = useCallback(() => {
@@ -770,7 +859,7 @@ export default function SkygridApp() {
       'rl',
       policyBundle.policy,
     );
-    setMission({
+    const nextState = {
       ...mission,
       drones: planned.drones,
       waypoints: planned.waypoints,
@@ -786,40 +875,59 @@ export default function SkygridApp() {
         },
         ...mission.events,
       ].slice(0, 18),
-    });
+    };
+    setMission(nextState);
+    appendFieldRecordFrame(
+      nextState,
+      'replan',
+      '실비행 경로 생성 완료',
+      `${mission.drones.length}대 · 정찰지점 ${mission.waypoints.length}개`,
+    );
     setConfig((current) => ({ ...current, planner: 'rl' }));
     setFieldNotice('현재 지도 기준 실비행 경로를 생성했습니다.');
     setFieldPlanOpen(true);
-  }, [mission, policyBundle.policy]);
+  }, [appendFieldRecordFrame, mission, policyBundle.policy]);
 
   const executeDropout = useCallback(() => {
     if (!activeDropoutDroneId) return;
-    setMission((current) => {
-      const failed = triggerFailure(
-        current,
-        activeDropoutDroneId,
-        operationalPlanner,
-        policyBundle.policy,
-        dropoutReason,
-      );
-      if (mode !== 'field') return failed;
-      const planned = assignFieldRoutes(
-        failed.drones,
-        failed.waypoints,
-        failed.time,
-        'rl',
-        policyBundle.policy,
-      );
-      return {
-        ...failed,
-        drones: planned.drones,
-        waypoints: planned.waypoints,
-      };
-    });
+    const failed = triggerFailure(
+      mission,
+      activeDropoutDroneId,
+      operationalPlanner,
+      policyBundle.policy,
+      dropoutReason,
+    );
+    const nextState =
+      mode === 'field'
+        ? (() => {
+            const planned = assignFieldRoutes(
+              failed.drones,
+              failed.waypoints,
+              failed.time,
+              'rl',
+              policyBundle.policy,
+            );
+            return {
+              ...failed,
+              drones: planned.drones,
+              waypoints: planned.waypoints,
+            };
+          })()
+        : failed;
+    setMission(nextState);
+    appendFieldRecordFrame(
+      nextState,
+      'dropout',
+      `${activeDropoutDroneId} 이탈 처리`,
+      `${dropoutReason} · 잔여 기체 경로 재계산`,
+      { droneId: activeDropoutDroneId },
+    );
     setSelectedDroneId(activeDropoutDroneId);
   }, [
     activeDropoutDroneId,
+    appendFieldRecordFrame,
     dropoutReason,
+    mission,
     mode,
     operationalPlanner,
     policyBundle.policy,
@@ -852,6 +960,73 @@ export default function SkygridApp() {
 
   const toggleMission = useCallback(() => {
     if (!mission.running && !missionReady) return;
+    if (mode === 'field') {
+      const running = !mission.running;
+      const event = {
+        id: `clock-${Date.now()}`,
+        time: mission.time,
+        kind: 'system' as const,
+        title: running ? '현장 임무 기록 시작' : '현장 임무 기록 정지',
+        detail: running
+          ? '정찰 완료·경로 재계산 상태를 기록합니다.'
+          : '현장 임무 기록을 저장할 수 있습니다.',
+      };
+      const nextState = {
+        ...mission,
+        running,
+        events: [event, ...mission.events].slice(0, 18),
+      };
+      setMission(nextState);
+      setFieldReplayRunning(false);
+      if (running) {
+        const initialState = cloneMissionState({
+          ...mission,
+          running: false,
+        });
+        setFieldRecord({
+          schema: 'skygrid.field-record.v1',
+          createdAt: new Date().toISOString(),
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          initialState,
+          frames: [
+            makeFieldRecordFrame(
+              nextState,
+              0,
+              'start',
+              event.title,
+              event.detail,
+            ),
+          ],
+        });
+        setFieldRecording(true);
+        setFieldReplay(null);
+        setFieldReplayIndex(0);
+        setFieldNotice('현장 경로 기록을 시작했습니다.');
+      } else {
+        setFieldRecord((current) =>
+          current
+            ? {
+                ...current,
+                endedAt: new Date().toISOString(),
+                frames: [
+                  ...current.frames,
+                  makeFieldRecordFrame(
+                    nextState,
+                    current.frames.length,
+                    'stop',
+                    event.title,
+                    event.detail,
+                  ),
+                ],
+              }
+            : current,
+        );
+        setFieldRecording(false);
+        setFieldNotice('현장 경로 기록을 정지했습니다. 기록을 저장할 수 있습니다.');
+      }
+      return;
+    }
     if (
       !mission.running &&
       !mission.completed &&
@@ -875,15 +1050,8 @@ export default function SkygridApp() {
             id: `clock-${Date.now()}`,
             time: current.time,
             kind: 'system' as const,
-            title: running
-              ? mode === 'field'
-                ? '현장 임무 기록 시작'
-                : '가상 정찰 임무 시작'
-              : '임무 일시 정지',
-            detail:
-              mode === 'field'
-                ? '기체 위치와 정찰 결과는 운용자 입력으로만 갱신됩니다.'
-                : `시뮬레이션 ${config.simRate}배속`,
+            title: running ? '가상 정찰 임무 시작' : '임무 일시 정지',
+            detail: `시뮬레이션 ${config.simRate}배속`,
           },
           ...current.events,
         ].slice(0, 18),
@@ -1345,6 +1513,13 @@ export default function SkygridApp() {
         return;
       }
       setMission(result.state);
+      appendFieldRecordFrame(
+        result.state,
+        'visit',
+        `${result.completedWaypointId} 정찰 완료`,
+        `${droneId} · ${result.nextWaypointId ? `다음 ${result.nextWaypointId}` : '기지 복귀'} · 경로 재계산`,
+        { droneId, waypointId: result.completedWaypointId },
+      );
       if (result.nextWaypointId) {
         setSelectedWaypointId(result.nextWaypointId);
         setSelectedMapEntity('waypoint');
@@ -1357,7 +1532,13 @@ export default function SkygridApp() {
         );
       }
     },
-    [mission, policyBundle.policy, selectedDroneId, selectedWaypointId],
+    [
+      appendFieldRecordFrame,
+      mission,
+      policyBundle.policy,
+      selectedDroneId,
+      selectedWaypointId,
+    ],
   );
 
   const updateWaypoint = useCallback(
@@ -1497,6 +1678,73 @@ export default function SkygridApp() {
     setValidationPlan(plan);
     setFieldNotice('시험계획 JSON을 저장했습니다.');
   }, [config, mission, policyBundle]);
+
+  const exportFieldRecord = useCallback(() => {
+    if (fieldRecording) {
+      setFieldNotice('기록을 먼저 정지하십시오.');
+      return;
+    }
+    if (!fieldRecord || fieldRecord.frames.length < 2) {
+      setFieldNotice('저장할 현장 임무 기록이 없습니다.');
+      return;
+    }
+    const date = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
+    downloadText(
+      `skygrid-field-record-${date}.json`,
+      JSON.stringify(fieldRecord, null, 2),
+      'application/json;charset=utf-8',
+    );
+    setFieldNotice(
+      `현장 경로 기록 ${fieldRecord.frames.length - 1}개 구간을 저장했습니다.`,
+    );
+  }, [fieldRecord, fieldRecording]);
+
+  const handleFieldRecordFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const record = parseFieldMissionRecord(await file.text());
+        const firstState = cloneMissionState(
+          record.frames[0]?.state ?? record.initialState,
+        );
+        setFieldRecord(record);
+        setFieldReplay(record);
+        setFieldReplayIndex(0);
+        setFieldReplayRunning(false);
+        setFieldRecording(false);
+        setMission({ ...firstState, running: false });
+        setSelectedDroneId(firstState.drones[0]?.id ?? '');
+        setSelectedWaypointId(firstState.waypoints[0]?.id ?? '');
+        setMode('field');
+        setFieldNotice(
+          `현장 기록 불러옴 · ${record.frames.length - 1}개 경로 변경 단계`,
+        );
+      } catch (error) {
+        setFieldNotice(
+          error instanceof Error
+            ? error.message
+            : '현장 임무 기록을 불러오지 못했습니다.',
+        );
+      }
+      event.target.value = '';
+    },
+    [],
+  );
+
+  const toggleFieldReplay = useCallback(() => {
+    if (!fieldReplay) return;
+    if (fieldReplayIndex >= fieldReplay.frames.length - 1) {
+      setFieldReplayIndex(0);
+      setMission({
+        ...cloneMissionState(
+          fieldReplay.frames[0]?.state ?? fieldReplay.initialState,
+        ),
+        running: false,
+      });
+    }
+    setFieldReplayRunning((current) => !current);
+  }, [fieldReplay, fieldReplayIndex]);
 
   const exportDroneRoute = (droneId: string, format: 'guidance' | 'litchi') => {
     const drone = mission.drones.find((item) => item.id === droneId);
@@ -1715,6 +1963,11 @@ export default function SkygridApp() {
         };
         setConfig(fieldConfig);
         applyScenario(fieldConfig);
+        setFieldRecording(false);
+        setFieldRecord(null);
+        setFieldReplay(null);
+        setFieldReplayIndex(0);
+        setFieldReplayRunning(false);
       } else if (nextMode === 'simulation' && mode === 'field') {
         setConfig(DEFAULT_CONFIG);
         applyScenario(DEFAULT_CONFIG);
@@ -1875,6 +2128,13 @@ export default function SkygridApp() {
         accept=".json,application/json"
         className="sr-only"
         onChange={handlePlanFile}
+      />
+      <input
+        ref={fieldRecordInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="sr-only"
+        onChange={handleFieldRecordFile}
       />
       <header className="mission-header">
         <div className="brand-lockup">
@@ -2219,7 +2479,43 @@ export default function SkygridApp() {
                     >
                       <FileJson /> 시험계획 JSON 저장
                     </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={exportFieldRecord}
+                      disabled={fieldRecording || !fieldRecord}
+                    >
+                      <Download /> 현장 경로 기록 저장
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => fieldRecordInputRef.current?.click()}
+                    >
+                      <Upload /> 현장 기록 불러오기
+                    </Button>
+                    {fieldReplay && (
+                      <Button
+                        variant="outline"
+                        className="justify-start"
+                        onClick={toggleFieldReplay}
+                      >
+                        {fieldReplayRunning ? <Pause /> : <Play />}
+                        {fieldReplayRunning ? '기록 재생 정지' : '기록 시나리오 재생'}
+                      </Button>
+                    )}
                   </div>
+                  {(fieldRecording || fieldRecord || fieldReplay) && (
+                    <div className="log-source-guide">
+                      <p>
+                        {fieldReplay
+                          ? `재생 ${Math.min(fieldReplayIndex + 1, fieldReplay.frames.length)}/${fieldReplay.frames.length} 단계`
+                          : fieldRecording
+                            ? `기록 중 · 경로 변경 ${Math.max(0, (fieldRecord?.frames.length ?? 1) - 1)}회`
+                            : `저장 가능 · 경로 변경 ${Math.max(0, (fieldRecord?.frames.length ?? 1) - 1)}회`}
+                      </p>
+                    </div>
+                  )}
                   {fieldNotice && (
                     <div className="inline-notice">{fieldNotice}</div>
                   )}
