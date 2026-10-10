@@ -669,9 +669,36 @@ export function assignFieldRoutes(
     excludedWaypointIds,
     operationalDroneCount,
   );
+  const excluded = new Set(excludedWaypointIds);
+  const candidateById = new Map(
+    candidates.map((waypoint) => [waypoint.id, waypoint]),
+  );
+
+  // A field report may replan the fleet's remaining work, but it must not
+  // redirect an aircraft that is already flying to its current target.
+  // Include those committed targets even when the next patrol round would
+  // otherwise omit them, so assignRoutes can preserve the first route leg.
+  const committedTargetIds = new Set(
+    drones
+      .filter(
+        (drone) =>
+          (drone.status === 'active' || drone.status === 'ready') &&
+          (drone.phase === 'transit' || drone.phase === 'dwell'),
+      )
+      .map((drone) => drone.route[drone.routeIndex])
+      .filter(
+        (waypointId): waypointId is string =>
+          Boolean(waypointId) && !excluded.has(waypointId),
+      ),
+  );
+  for (const waypoint of waypoints) {
+    if (committedTargetIds.has(waypoint.id)) {
+      candidateById.set(waypoint.id, waypoint);
+    }
+  }
   const planned = assignRoutes(
     drones,
-    candidates,
+    [...candidateById.values()],
     missionTime,
     planner,
     policy,
@@ -681,11 +708,16 @@ export function assignFieldRoutes(
   );
   return {
     drones: planned.drones.map((drone) => {
-      if (
-        drone.status === 'failed' ||
-        drone.route[drone.routeIndex] !== undefined
-      ) {
-        return drone;
+      if (drone.status === 'failed') return drone;
+      if (drone.route[drone.routeIndex] !== undefined) {
+        return {
+          ...drone,
+          status: 'active' as const,
+          phase:
+            drone.phase === 'dwell'
+              ? ('dwell' as const)
+              : ('transit' as const),
+        };
       }
       const atBase =
         haversineMeters(drone, {

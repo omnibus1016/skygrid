@@ -1,6 +1,7 @@
 import { CandidateDqn } from '../lib/skygrid/rl-policy';
 import { PRETRAINED_POLICY_WEIGHTS } from '../lib/skygrid/pretrained-policy';
 import {
+  assignFieldRoutes,
   createMission,
   reportFieldWaypointVisit,
 } from '../lib/skygrid/simulation';
@@ -53,6 +54,18 @@ function nextAssignedDrone(mission: MissionState) {
 
 function runPatrol(droneCount: number, seed: number, rounds: number) {
   let mission = createMission(config(droneCount, seed), policy);
+  const initialPlan = assignFieldRoutes(
+    mission.drones,
+    mission.waypoints,
+    mission.time,
+    'rl',
+    policy,
+  );
+  mission = {
+    ...mission,
+    drones: initialPlan.drones,
+    waypoints: initialPlan.waypoints,
+  };
   const waypointCount = mission.waypoints.length;
   const sequence: string[] = [];
   for (let round = 0; round < rounds; round += 1) {
@@ -104,11 +117,63 @@ function runPatrol(droneCount: number, seed: number, rounds: number) {
   return { droneCount, sequence, visits };
 }
 
+function runCommittedTargetRegression() {
+  let mission = createMission(config(2, 151), policy);
+  const initialPlan = assignFieldRoutes(
+    mission.drones,
+    mission.waypoints,
+    mission.time,
+    'rl',
+    policy,
+  );
+  mission = {
+    ...mission,
+    drones: initialPlan.drones,
+    waypoints: initialPlan.waypoints,
+  };
+
+  const reportingDrone = mission.drones[0];
+  const committedDrone = mission.drones[1];
+  const completedWaypointId = reportingDrone.route[reportingDrone.routeIndex];
+  const committedWaypointId = committedDrone.route[committedDrone.routeIndex];
+  if (!completedWaypointId || !committedWaypointId) {
+    throw new Error('두 기체의 초기 현장 목표를 배정하지 못했습니다.');
+  }
+
+  const result = reportFieldWaypointVisit(
+    mission,
+    reportingDrone.id,
+    completedWaypointId,
+    'rl',
+    policy,
+  );
+  if (!result) throw new Error('현장 정찰 완료 보고에 실패했습니다.');
+
+  const after = result.state.drones.find(
+    (drone) => drone.id === committedDrone.id,
+  );
+  const targetAfterReport = after?.route[after.routeIndex];
+  if (targetAfterReport !== committedWaypointId) {
+    throw new Error(
+      `${reportingDrone.id} 완료 보고 후 ${committedDrone.id}의 이동 중 목표가 ${committedWaypointId}에서 ${targetAfterReport ?? '미배정'}(으)로 변경되었습니다.`,
+    );
+  }
+
+  return {
+    reportingDrone: reportingDrone.id,
+    completedWaypoint: completedWaypointId,
+    committedDrone: committedDrone.id,
+    committedWaypoint: committedWaypointId,
+    preserved: true,
+  };
+}
+
 const results = [
   runPatrol(1, 41, 3),
   runPatrol(2, 73, 3),
   runPatrol(3, 97, 3),
 ];
+console.log(JSON.stringify(runCommittedTargetRegression()));
 for (const result of results) {
   console.log(
     JSON.stringify({
