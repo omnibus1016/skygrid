@@ -604,16 +604,53 @@ export interface FieldVisitResult {
 export function fieldPlanningWaypoints(
   waypoints: Waypoint[],
   excludedWaypointIds: string[] = [],
+  minimumCandidateCount = 1,
 ): Waypoint[] {
   if (!waypoints.length) return [];
   const excluded = new Set(excludedWaypointIds);
-  const minimumVisits = Math.min(
-    ...waypoints.map((waypoint) => waypoint.visitedCount),
+  const targetCount = Math.min(
+    waypoints.length,
+    Math.max(1, minimumCandidateCount),
   );
-  return waypoints.filter((waypoint) => {
-    if (excluded.has(waypoint.id)) return false;
-    return waypoint.visitedCount === minimumVisits;
-  });
+  const byPatrolOrder = (a: Waypoint, b: Waypoint) =>
+    a.visitedCount - b.visitedCount ||
+    a.lastVisited + a.revisitSec - (b.lastVisited + b.revisitSec) ||
+    b.priority - a.priority ||
+    a.id.localeCompare(b.id);
+  const available = waypoints
+    .filter((waypoint) => !excluded.has(waypoint.id))
+    .sort(byPatrolOrder);
+  const candidates: Waypoint[] = [];
+
+  // Keep the least-visited patrol round authoritative, but if that round has
+  // fewer points than operational aircraft, immediately open the next round.
+  // This avoids leaving an otherwise usable aircraft without a route near the
+  // end of each patrol cycle.
+  let index = 0;
+  while (index < available.length) {
+    const visitLevel = available[index].visitedCount;
+    while (
+      index < available.length &&
+      available[index].visitedCount === visitLevel
+    ) {
+      candidates.push(available[index]);
+      index += 1;
+    }
+    if (candidates.length >= targetCount) break;
+  }
+
+  // The just-completed point remains the last resort. It is only reopened when
+  // there are at least as many aircraft as other distinct patrol targets.
+  if (candidates.length < targetCount) {
+    const fallback = waypoints
+      .filter((waypoint) => excluded.has(waypoint.id))
+      .sort(byPatrolOrder);
+    for (const waypoint of fallback) {
+      candidates.push(waypoint);
+      if (candidates.length >= targetCount) break;
+    }
+  }
+  return candidates;
 }
 
 export function assignFieldRoutes(
@@ -624,7 +661,14 @@ export function assignFieldRoutes(
   policy: CandidateDqn,
   excludedWaypointIds: string[] = [],
 ): ReturnType<typeof assignRoutes> {
-  const candidates = fieldPlanningWaypoints(waypoints, excludedWaypointIds);
+  const operationalDroneCount = drones.filter(
+    (drone) => drone.status === 'active' || drone.status === 'ready',
+  ).length;
+  const candidates = fieldPlanningWaypoints(
+    waypoints,
+    excludedWaypointIds,
+    operationalDroneCount,
+  );
   const planned = assignRoutes(
     drones,
     candidates,
@@ -636,7 +680,24 @@ export function assignFieldRoutes(
     planned.waypoints.map((waypoint) => [waypoint.id, waypoint.assignedDrone]),
   );
   return {
-    drones: planned.drones,
+    drones: planned.drones.map((drone) => {
+      if (
+        drone.status === 'failed' ||
+        drone.route[drone.routeIndex] !== undefined
+      ) {
+        return drone;
+      }
+      const atBase =
+        haversineMeters(drone, {
+          lat: drone.homeLat,
+          lng: drone.homeLng,
+        }) < 5;
+      return {
+        ...drone,
+        status: atBase ? ('ready' as const) : ('returning' as const),
+        phase: atBase ? ('base' as const) : ('return' as const),
+      };
+    }),
     waypoints: waypoints.map((waypoint) => ({
       ...waypoint,
       assignedDrone: assignment.get(waypoint.id),

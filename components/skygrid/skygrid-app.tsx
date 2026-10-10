@@ -2565,7 +2565,14 @@ export default function SkygridApp() {
                     <div className="field-guidance-grid">
                       <div>
                         <span>다음 지점</span>
-                        <strong>{selectedRouteTarget?.id ?? '미배정'}</strong>
+                        <strong>
+                          {selectedRouteTarget?.id ??
+                            (selectedDrone.status === 'returning'
+                              ? '기지 복귀'
+                              : selectedDrone.status === 'failed'
+                                ? '임무 이탈'
+                                : '기지 대기')}
+                        </strong>
                       </div>
                       <div>
                         <span>방위</span>
@@ -2609,7 +2616,11 @@ export default function SkygridApp() {
                       <CheckCircle2 />
                       {selectedRouteTarget
                         ? `${selectedRouteTarget.id} 도착·정찰 완료`
-                        : '배정된 다음 지점 없음'}
+                        : selectedDrone.status === 'returning'
+                          ? '기지 복귀 후 재투입'
+                          : selectedDrone.status === 'failed'
+                            ? '임무 이탈 기체'
+                            : '다음 순회 대기'}
                     </Button>
                   </div>
                 )}

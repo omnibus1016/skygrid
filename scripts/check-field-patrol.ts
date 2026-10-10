@@ -30,10 +30,25 @@ function config(droneCount: number, seed: number): ScenarioConfig {
 }
 
 function nextAssignedDrone(mission: MissionState) {
-  return mission.drones.find(
-    (drone) =>
-      drone.status !== 'failed' && Boolean(drone.route[drone.routeIndex]),
-  );
+  return mission.drones
+    .filter(
+      (drone) =>
+        drone.status !== 'failed' && Boolean(drone.route[drone.routeIndex]),
+    )
+    .sort((a, b) => {
+      const targetA = mission.waypoints.find(
+        (waypoint) => waypoint.id === a.route[a.routeIndex],
+      );
+      const targetB = mission.waypoints.find(
+        (waypoint) => waypoint.id === b.route[b.routeIndex],
+      );
+      if (!targetA || !targetB) return 0;
+      return (
+        targetA.visitedCount - targetB.visitedCount ||
+        targetA.lastVisited + targetA.revisitSec -
+          (targetB.lastVisited + targetB.revisitSec)
+      );
+    })[0];
 }
 
 function runPatrol(droneCount: number, seed: number, rounds: number) {
@@ -62,6 +77,17 @@ function runPatrol(droneCount: number, seed: number, rounds: number) {
       );
       if (!result) throw new Error(`${waypointId} 완료 보고에 실패했습니다.`);
       mission = { ...result.state, time: result.state.time + 180 };
+      const operational = mission.drones.filter(
+        (candidate) => candidate.status !== 'failed',
+      );
+      const unassigned = operational.filter(
+        (candidate) => !candidate.route[candidate.routeIndex],
+      );
+      if (waypointCount >= operational.length && unassigned.length) {
+        throw new Error(
+          `${droneCount}대 조건에서 ${unassigned.map((candidate) => candidate.id).join(',')} 경로가 비었습니다.`,
+        );
+      }
     }
     if (seen.size !== waypointCount) {
       throw new Error(
@@ -78,7 +104,11 @@ function runPatrol(droneCount: number, seed: number, rounds: number) {
   return { droneCount, sequence, visits };
 }
 
-const results = [runPatrol(1, 41, 3), runPatrol(2, 73, 3)];
+const results = [
+  runPatrol(1, 41, 3),
+  runPatrol(2, 73, 3),
+  runPatrol(3, 97, 3),
+];
 for (const result of results) {
   console.log(
     JSON.stringify({
