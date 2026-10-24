@@ -1,0 +1,2559 @@
+{
+  "settings": {
+    "runs": 100,
+    "baseSeed": 20261125,
+    "seedIncrement": 17,
+    "durationSeconds": 3600,
+    "failureSeconds": [
+      1200,
+      2400
+    ],
+    "stepSeconds": 10,
+    "droneCount": 4,
+    "waypointCount": 6,
+    "mixedFleet": true,
+    "noFlyZoneCount": 0,
+    "campusCenter": {
+      "lat": 36.3722,
+      "lng": 127.3604
+    },
+    "campusScale": 0.25,
+    "dwellSeconds": [
+      20,
+      80
+    ],
+    "revisitSeconds": [
+      120,
+      300
+    ],
+    "initialBatteryPercent": 100,
+    "reserveBatteryPercent": 20
+  },
+  "byPlanner": {
+    "nearest": {
+      "continuity": {
+        "mean": 69.77937928180205,
+        "sd": 8.349048642472244,
+        "min": 49.20454545454545,
+        "max": 88.875
+      },
+      "weightedGapSeconds": {
+        "mean": 22227.426987670675,
+        "sd": 26961.566356178188,
+        "min": 1443.855192655551,
+        "max": 174190.0635128305
+      },
+      "recoverySeconds": {
+        "mean": 352.15384615384613,
+        "sd": 308.29005776137564,
+        "min": 0,
+        "max": 2060
+      },
+      "distanceKm": {
+        "mean": 18.49166716065011,
+        "sd": 6.200326444597998,
+        "min": 8.621878802475774,
+        "max": 35.86418577582819
+      },
+      "reserveViolations": {
+        "mean": 0,
+        "sd": 0,
+        "min": 0,
+        "max": 0
+      },
+      "recoveryRate": 97.5,
+      "completedVisits": {
+        "mean": 132.31,
+        "sd": 18.308079024729974,
+        "min": 95,
+        "max": 188
+      }
+    },
+    "priority": {
+      "continuity": {
+        "mean": 67.55440376792254,
+        "sd": 8.302375500456487,
+        "min": 50.68181818181824,
+        "max": 84.88095238095232
+      },
+      "weightedGapSeconds": {
+        "mean": 12430.817046030734,
+        "sd": 6948.647533273304,
+        "min": 2100.0790907469864,
+        "max": 30669.874365023403
+      },
+      "recoverySeconds": {
+        "mean": 336.010101010101,
+        "sd": 242.50540817453614,
+        "min": 0,
+        "max": 1200
+      },
+      "distanceKm": {
+        "mean": 26.559099058098518,
+        "sd": 6.14101541794738,
+        "min": 13.367348346509797,
+        "max": 40.35431009141795
+      },
+      "reserveViolations": {
+        "mean": 0,
+        "sd": 0,
+        "min": 0,
+        "max": 0
+      },
+      "recoveryRate": 99,
+      "completedVisits": {
+        "mean": 115.56,
+        "sd": 16.518933122788273,
+        "min": 82,
+        "max": 157
+      }
+    },
+    "rl": {
+      "continuity": {
+        "mean": 72.2749449452515,
+        "sd": 8.005970512526202,
+        "min": 51.9375,
+        "max": 88.07692307692315
+      },
+      "weightedGapSeconds": {
+        "mean": 9560.277712590809,
+        "sd": 7961.407639449785,
+        "min": 1110.5920244339552,
+        "max": 48198.466596504586
+      },
+      "recoverySeconds": {
+        "mean": 358.93401015228426,
+        "sd": 208.80461697985027,
+        "min": 0,
+        "max": 1180
+      },
+      "distanceKm": {
+        "mean": 29.630027622801,
+        "sd": 6.641093209698551,
+        "min": 15.141964437501061,
+        "max": 46.17049730063205
+      },
+      "reserveViolations": {
+        "mean": 0,
+        "sd": 0,
+        "min": 0,
+        "max": 0
+      },
+      "recoveryRate": 98.5,
+      "completedVisits": {
+        "mean": 110.04,
+        "sd": 14.913162784682003,
+        "min": 78,
+        "max": 153
+      }
+    }
+  },
+  "paired": {
+    "nearest": [
+      {
+        "seed": 20261125,
+        "continuity": 73.67424242424258,
+        "weightedGapSeconds": 4424.087392382178,
+        "recoverySeconds": 390,
+        "distanceKm": 28.692861791565186,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261142,
+        "continuity": 75.29166666666667,
+        "weightedGapSeconds": 17032.252598025334,
+        "recoverySeconds": 100,
+        "distanceKm": 17.742886337956364,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261159,
+        "continuity": 67.58333333333314,
+        "weightedGapSeconds": 20811.510042832095,
+        "recoverySeconds": 420,
+        "distanceKm": 14.603218716499999,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261176,
+        "continuity": 61.25,
+        "weightedGapSeconds": 9562.474585678752,
+        "recoverySeconds": 400,
+        "distanceKm": 35.86418577582819,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261193,
+        "continuity": 84.46428571428585,
+        "weightedGapSeconds": 3491.3765551281876,
+        "recoverySeconds": 210,
+        "distanceKm": 11.459416292462848,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261210,
+        "continuity": 67.14912280701759,
+        "weightedGapSeconds": 8601.753592458112,
+        "recoverySeconds": 200,
+        "distanceKm": 23.436271641436058,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261227,
+        "continuity": 64.60227272727269,
+        "weightedGapSeconds": 16113.07903930458,
+        "recoverySeconds": 290,
+        "distanceKm": 24.21616058373326,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261244,
+        "continuity": 74.56018518518513,
+        "weightedGapSeconds": 14536.978986709964,
+        "recoverySeconds": 155,
+        "distanceKm": 10.581300364385159,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261261,
+        "continuity": 67.47807017543845,
+        "weightedGapSeconds": 17429.25074680704,
+        "recoverySeconds": 365,
+        "distanceKm": 19.047321992348497,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261278,
+        "continuity": 60.67129629629629,
+        "weightedGapSeconds": 22240.439166462165,
+        "recoverySeconds": 480,
+        "distanceKm": 14.974179401368987,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261295,
+        "continuity": 84.13461538461529,
+        "weightedGapSeconds": 10276.849296686436,
+        "recoverySeconds": 135,
+        "distanceKm": 10.065898055632443,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261312,
+        "continuity": 77.25378787878792,
+        "weightedGapSeconds": 15673.938069508782,
+        "recoverySeconds": 175,
+        "distanceKm": 13.301048138268593,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261329,
+        "continuity": 67.4122807017543,
+        "weightedGapSeconds": 24510.78486660647,
+        "recoverySeconds": 185,
+        "distanceKm": 17.335659755335794,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261346,
+        "continuity": 63.66071428571435,
+        "weightedGapSeconds": 11785.83521544777,
+        "recoverySeconds": 280,
+        "distanceKm": 24.538531436628304,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261363,
+        "continuity": 65.04901960784326,
+        "weightedGapSeconds": 10985.296828559749,
+        "recoverySeconds": 545,
+        "distanceKm": 28.23703704925569,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261380,
+        "continuity": 74.82638888888881,
+        "weightedGapSeconds": 4715.447671216887,
+        "recoverySeconds": 175,
+        "distanceKm": 16.397606328273053,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261397,
+        "continuity": 71.0833333333332,
+        "weightedGapSeconds": 7778.698752228166,
+        "recoverySeconds": 335,
+        "distanceKm": 23.501555952118697,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261414,
+        "continuity": 69.47916666666667,
+        "weightedGapSeconds": 10546.830290281034,
+        "recoverySeconds": 310,
+        "distanceKm": 20.332784512258378,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261431,
+        "continuity": 78.10897435897414,
+        "weightedGapSeconds": 9289.204017390432,
+        "recoverySeconds": 285,
+        "distanceKm": 10.742624368509311,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261448,
+        "continuity": 61.403508771930014,
+        "weightedGapSeconds": 60878.06300348899,
+        "recoverySeconds": 215,
+        "distanceKm": 13.998480654417383,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261465,
+        "continuity": 70.98214285714297,
+        "weightedGapSeconds": 14627.571950775653,
+        "recoverySeconds": 360,
+        "distanceKm": 15.601643806653914,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261482,
+        "continuity": 70.49019607843105,
+        "weightedGapSeconds": 15674.30618708488,
+        "recoverySeconds": 470,
+        "distanceKm": 8.621878802475774,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261499,
+        "continuity": 72.82738095238093,
+        "weightedGapSeconds": 6793.624350182159,
+        "recoverySeconds": 455,
+        "distanceKm": 21.662554657484215,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261516,
+        "continuity": 64.3154761904761,
+        "weightedGapSeconds": 13539.426120975068,
+        "recoverySeconds": 370,
+        "distanceKm": 29.838170745414118,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261533,
+        "continuity": 76.04166666666664,
+        "weightedGapSeconds": 8637.23230782634,
+        "recoverySeconds": 180,
+        "distanceKm": 11.347782583552647,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261550,
+        "continuity": 76.78240740740765,
+        "weightedGapSeconds": 21208.67039146403,
+        "recoverySeconds": 145,
+        "distanceKm": 13.256485706146886,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261567,
+        "continuity": 85.6018518518517,
+        "weightedGapSeconds": 1443.855192655551,
+        "recoverySeconds": 280,
+        "distanceKm": 19.17007465167565,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261584,
+        "continuity": 74.63541666666667,
+        "weightedGapSeconds": 21466.457951180557,
+        "recoverySeconds": 215,
+        "distanceKm": 12.416897744741556,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261601,
+        "continuity": 78.627450980392,
+        "weightedGapSeconds": 7086.535006753406,
+        "recoverySeconds": 160,
+        "distanceKm": 12.827762341003648,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261618,
+        "continuity": 65.23809523809527,
+        "weightedGapSeconds": 15390.0077217695,
+        "recoverySeconds": 475,
+        "distanceKm": 26.878178029466447,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261635,
+        "continuity": 62.52777777777785,
+        "weightedGapSeconds": 20847.1698150793,
+        "recoverySeconds": 85,
+        "distanceKm": 17.288329784272204,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261652,
+        "continuity": 72.96666666666667,
+        "weightedGapSeconds": 18947.176901300245,
+        "recoverySeconds": 205,
+        "distanceKm": 19.413957428124746,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261669,
+        "continuity": 64.79166666666669,
+        "weightedGapSeconds": 12966.948120540119,
+        "recoverySeconds": 280,
+        "distanceKm": 19.501967496966834,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261686,
+        "continuity": 60.43981481481497,
+        "weightedGapSeconds": 56715.580015062515,
+        "recoverySeconds": 250,
+        "distanceKm": 9.419364784258851,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261703,
+        "continuity": 76.37820512820517,
+        "weightedGapSeconds": 6379.344879333049,
+        "recoverySeconds": 395,
+        "distanceKm": 15.689785825130679,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261720,
+        "continuity": 72.10526315789454,
+        "weightedGapSeconds": 16688.345904947568,
+        "recoverySeconds": 435,
+        "distanceKm": 15.247458419222944,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261737,
+        "continuity": 63.45588235294108,
+        "weightedGapSeconds": 89050.75089372929,
+        "recoverySeconds": 700,
+        "distanceKm": 12.475595958555044,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261754,
+        "continuity": 65.17857142857144,
+        "weightedGapSeconds": 40609.46339104851,
+        "recoverySeconds": 860,
+        "distanceKm": 14.593716987849344,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261771,
+        "continuity": 71.82692307692297,
+        "weightedGapSeconds": 11460.782324504024,
+        "recoverySeconds": 295,
+        "distanceKm": 19.056652492238147,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261788,
+        "continuity": 78.33333333333333,
+        "weightedGapSeconds": 8085.760128705504,
+        "recoverySeconds": 370,
+        "distanceKm": 20.724753231767384,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261805,
+        "continuity": 67.36111111111111,
+        "weightedGapSeconds": 55750.677534725015,
+        "recoverySeconds": 360,
+        "distanceKm": 14.230201458236532,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261822,
+        "continuity": 71.6203703703704,
+        "weightedGapSeconds": 11806.073290007718,
+        "recoverySeconds": 435,
+        "distanceKm": 18.165921497732015,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261839,
+        "continuity": 75.75,
+        "weightedGapSeconds": 12931.700461973813,
+        "recoverySeconds": 350,
+        "distanceKm": 19.981531707224644,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261856,
+        "continuity": 65.79545454545469,
+        "weightedGapSeconds": 20587.196722576136,
+        "recoverySeconds": 845,
+        "distanceKm": 18.577078440859353,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261873,
+        "continuity": 63.65196078431359,
+        "weightedGapSeconds": 14865.538148686992,
+        "recoverySeconds": 675,
+        "distanceKm": 30.534859990619996,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261890,
+        "continuity": 53.51851851851843,
+        "weightedGapSeconds": 91499.52595392086,
+        "recoverySeconds": 990,
+        "distanceKm": 20.076753836566045,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261907,
+        "continuity": 68.58796296296285,
+        "weightedGapSeconds": 58588.22467831743,
+        "recoverySeconds": 720,
+        "distanceKm": 12.207489005977216,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261924,
+        "continuity": 49.20454545454545,
+        "weightedGapSeconds": 39142.54222866899,
+        "recoverySeconds": 390,
+        "distanceKm": 22.57359383743851,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261941,
+        "continuity": 88.875,
+        "weightedGapSeconds": 1623.8929937584135,
+        "recoverySeconds": 165,
+        "distanceKm": 10.282141006041323,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261958,
+        "continuity": 69.40476190476184,
+        "weightedGapSeconds": 8673.928113682945,
+        "recoverySeconds": 0,
+        "distanceKm": 22.16545028254678,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261975,
+        "continuity": 79.21568627450982,
+        "weightedGapSeconds": 6422.4866305241885,
+        "recoverySeconds": 230,
+        "distanceKm": 9.536254160008992,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261992,
+        "continuity": 76.27604166666667,
+        "weightedGapSeconds": 15852.98189519324,
+        "recoverySeconds": 145,
+        "distanceKm": 18.55722020390863,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262009,
+        "continuity": 70.35984848484841,
+        "weightedGapSeconds": 30654.572139460495,
+        "recoverySeconds": 1200,
+        "distanceKm": 12.41637847616142,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262026,
+        "continuity": 62.22222222222232,
+        "weightedGapSeconds": 15530.899688426634,
+        "recoverySeconds": 120,
+        "distanceKm": 20.643327333978508,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262043,
+        "continuity": 67.63888888888891,
+        "weightedGapSeconds": 15753.112471546567,
+        "recoverySeconds": 650,
+        "distanceKm": 20.88592762493693,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262060,
+        "continuity": 81.66666666666688,
+        "weightedGapSeconds": 4609.081368234808,
+        "recoverySeconds": 230,
+        "distanceKm": 19.542779638716087,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262077,
+        "continuity": 52.91666666666673,
+        "weightedGapSeconds": 39659.55923790444,
+        "recoverySeconds": 320,
+        "distanceKm": 21.65942014352769,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262094,
+        "continuity": 79.63235294117638,
+        "weightedGapSeconds": 4599.534777209279,
+        "recoverySeconds": 275,
+        "distanceKm": 14.584982191411576,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262111,
+        "continuity": 59.32539682539683,
+        "weightedGapSeconds": 51612.17110393594,
+        "recoverySeconds": 835,
+        "distanceKm": 15.228816690369275,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262128,
+        "continuity": 65.57692307692307,
+        "weightedGapSeconds": 8734.389811178597,
+        "recoverySeconds": 290,
+        "distanceKm": 26.67706139419753,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262145,
+        "continuity": 83.203125,
+        "weightedGapSeconds": 5018.055712669684,
+        "recoverySeconds": 180,
+        "distanceKm": 20.59167998662705,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262162,
+        "continuity": 76.09375,
+        "weightedGapSeconds": 9386.633780247728,
+        "recoverySeconds": 460,
+        "distanceKm": 19.37298928885188,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262179,
+        "continuity": 61.21212121212133,
+        "weightedGapSeconds": 42325.77719886134,
+        "recoverySeconds": 455,
+        "distanceKm": 22.97184524047995,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262196,
+        "continuity": 78.62745098039231,
+        "weightedGapSeconds": 14008.003779293073,
+        "recoverySeconds": 130,
+        "distanceKm": 10.15649965914533,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262213,
+        "continuity": 77.77777777777779,
+        "weightedGapSeconds": 11036.995149209331,
+        "recoverySeconds": 350,
+        "distanceKm": 21.362165743713863,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262230,
+        "continuity": 69.31547619047598,
+        "weightedGapSeconds": 7537.402875561961,
+        "recoverySeconds": 310,
+        "distanceKm": 23.899243357581188,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262247,
+        "continuity": 61.479166666666664,
+        "weightedGapSeconds": 38977.65935417101,
+        "recoverySeconds": 245,
+        "distanceKm": 26.393196089653284,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262264,
+        "continuity": 82.77777777777783,
+        "weightedGapSeconds": 15801.342135263372,
+        "recoverySeconds": 130,
+        "distanceKm": 8.999444462357822,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262281,
+        "continuity": 80.09803921568628,
+        "weightedGapSeconds": 16172.49692547509,
+        "recoverySeconds": 195,
+        "distanceKm": 9.20369397980668,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262298,
+        "continuity": 57.499999999999936,
+        "weightedGapSeconds": 23379.424923386916,
+        "recoverySeconds": 605,
+        "distanceKm": 24.92330916090305,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262315,
+        "continuity": 71.1875,
+        "weightedGapSeconds": 14508.858139380505,
+        "recoverySeconds": 270,
+        "distanceKm": 29.511179873794923,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262332,
+        "continuity": 53.50877192982443,
+        "weightedGapSeconds": 42448.23312194823,
+        "recoverySeconds": 675,
+        "distanceKm": 12.152818775930632,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262349,
+        "continuity": 55.000000000000064,
+        "weightedGapSeconds": 19020.243037307588,
+        "recoverySeconds": 615,
+        "distanceKm": 34.06988183775201,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262366,
+        "continuity": 67.06018518518528,
+        "weightedGapSeconds": 12568.443720387057,
+        "recoverySeconds": 230,
+        "distanceKm": 21.4747203527558,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262383,
+        "continuity": 73.0882352941177,
+        "weightedGapSeconds": 14212.839789219403,
+        "recoverySeconds": 250,
+        "distanceKm": 16.01254215408216,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262400,
+        "continuity": 72.38095238095242,
+        "weightedGapSeconds": 6638.577886154875,
+        "recoverySeconds": 360,
+        "distanceKm": 23.330213417034074,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262417,
+        "continuity": 60.48076923076906,
+        "weightedGapSeconds": 12727.206838521332,
+        "recoverySeconds": 405,
+        "distanceKm": 27.957617795555898,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262434,
+        "continuity": 69.58333333333346,
+        "weightedGapSeconds": 34025.37031439715,
+        "recoverySeconds": 170,
+        "distanceKm": 11.124135645400322,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262451,
+        "continuity": 71.30208333333333,
+        "weightedGapSeconds": 8364.038087088451,
+        "recoverySeconds": 465,
+        "distanceKm": 29.787673107987693,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262468,
+        "continuity": 69.95614035087704,
+        "weightedGapSeconds": 35662.74537435601,
+        "recoverySeconds": 110,
+        "distanceKm": 11.104706307689979,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262485,
+        "continuity": 68.33333333333334,
+        "weightedGapSeconds": 5616.670662231024,
+        "recoverySeconds": 265,
+        "distanceKm": 32.712134133433054,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262502,
+        "continuity": 56.193181818181884,
+        "weightedGapSeconds": 35624.582472882525,
+        "recoverySeconds": 415,
+        "distanceKm": 20.573194726445653,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262519,
+        "continuity": 78.63425925925927,
+        "weightedGapSeconds": 7762.986970879649,
+        "recoverySeconds": 215,
+        "distanceKm": 17.57257036850712,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262536,
+        "continuity": 70.36764705882351,
+        "weightedGapSeconds": 9871.415433435466,
+        "recoverySeconds": 330,
+        "distanceKm": 22.581192693075312,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262553,
+        "continuity": 80.04629629629642,
+        "weightedGapSeconds": 6968.70041017618,
+        "recoverySeconds": 150,
+        "distanceKm": 10.878471307819739,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262570,
+        "continuity": 61.020833333333336,
+        "weightedGapSeconds": 156503.19611860297,
+        "recoverySeconds": 360,
+        "distanceKm": 13.135118894417278,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262587,
+        "continuity": 55.83333333333341,
+        "weightedGapSeconds": 51489.68618570489,
+        "recoverySeconds": 1110,
+        "distanceKm": 17.72470835475704,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262604,
+        "continuity": 51.583333333333336,
+        "weightedGapSeconds": 57250.404307497076,
+        "recoverySeconds": 290,
+        "distanceKm": 14.319100512270815,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262621,
+        "continuity": 76.31944444444454,
+        "weightedGapSeconds": 4161.499018348912,
+        "recoverySeconds": 220,
+        "distanceKm": 16.793655136498995,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262638,
+        "continuity": 72.13235294117662,
+        "weightedGapSeconds": 5870.2719929655905,
+        "recoverySeconds": 445,
+        "distanceKm": 21.121932364136896,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262655,
+        "continuity": 75.8125,
+        "weightedGapSeconds": 8558.308078479746,
+        "recoverySeconds": 305,
+        "distanceKm": 19.32577649465883,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262672,
+        "continuity": 76.47435897435895,
+        "weightedGapSeconds": 3854.6826376698236,
+        "recoverySeconds": 220,
+        "distanceKm": 14.1953323682546,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262689,
+        "continuity": 67.15277777777779,
+        "weightedGapSeconds": 14675.193031094346,
+        "recoverySeconds": 305,
+        "distanceKm": 15.667283907494195,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262706,
+        "continuity": 58.07017543859638,
+        "weightedGapSeconds": 174190.0635128305,
+        "recoverySeconds": 0,
+        "distanceKm": 18.82065092872137,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262723,
+        "continuity": 78.48958333333333,
+        "weightedGapSeconds": 5832.663550296795,
+        "recoverySeconds": 470,
+        "distanceKm": 27.020662430907727,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262740,
+        "continuity": 73.69791666666667,
+        "weightedGapSeconds": 11637.225704782473,
+        "recoverySeconds": 130,
+        "distanceKm": 16.10977508504741,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262757,
+        "continuity": 65.45634920634912,
+        "weightedGapSeconds": 17207.337816907147,
+        "recoverySeconds": 325,
+        "distanceKm": 12.541787926782021,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262774,
+        "continuity": 71.13095238095234,
+        "weightedGapSeconds": 9797.65338060412,
+        "recoverySeconds": 300,
+        "distanceKm": 19.93834071787035,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262791,
+        "continuity": 82.41071428571426,
+        "weightedGapSeconds": 10218.054904982204,
+        "recoverySeconds": 240,
+        "distanceKm": 18.577536457397343,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262808,
+        "continuity": 65.86309523809526,
+        "weightedGapSeconds": 24630.504911743752,
+        "recoverySeconds": 125,
+        "distanceKm": 12.528705473669099,
+        "reserveViolations": 0
+      }
+    ],
+    "priority": [
+      {
+        "seed": 20261125,
+        "continuity": 71.62878787878797,
+        "weightedGapSeconds": 5304.015740201586,
+        "recoverySeconds": 275,
+        "distanceKm": 38.774711661023346,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261142,
+        "continuity": 59.916666666666664,
+        "weightedGapSeconds": 17082.109212393538,
+        "recoverySeconds": 470,
+        "distanceKm": 35.11512255529704,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261159,
+        "continuity": 72.58333333333319,
+        "weightedGapSeconds": 5432.583356555129,
+        "recoverySeconds": 385,
+        "distanceKm": 23.415838540227437,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261176,
+        "continuity": 55.755208333333336,
+        "weightedGapSeconds": 14364.213448214012,
+        "recoverySeconds": 385,
+        "distanceKm": 36.497735837741786,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261193,
+        "continuity": 81.69642857142865,
+        "weightedGapSeconds": 2825.040181712369,
+        "recoverySeconds": 280,
+        "distanceKm": 21.303266428526126,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261210,
+        "continuity": 57.127192982456144,
+        "weightedGapSeconds": 16129.824675066557,
+        "recoverySeconds": 405,
+        "distanceKm": 37.36134604876279,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261227,
+        "continuity": 62.76515151515142,
+        "weightedGapSeconds": 23718.15817355876,
+        "recoverySeconds": 410,
+        "distanceKm": 18.70285661119854,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261244,
+        "continuity": 78.91203703703697,
+        "weightedGapSeconds": 9385.644898528119,
+        "recoverySeconds": 480,
+        "distanceKm": 14.968547123377503,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261261,
+        "continuity": 59.649122807017534,
+        "weightedGapSeconds": 16992.362236175148,
+        "recoverySeconds": 155,
+        "distanceKm": 25.128342663837557,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261278,
+        "continuity": 55.601851851851755,
+        "weightedGapSeconds": 27441.21219265551,
+        "recoverySeconds": 460,
+        "distanceKm": 19.28747932467014,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261295,
+        "continuity": 75.35256410256413,
+        "weightedGapSeconds": 5084.999862038893,
+        "recoverySeconds": 280,
+        "distanceKm": 24.467830991402856,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261312,
+        "continuity": 64.86742424242412,
+        "weightedGapSeconds": 15469.99057777204,
+        "recoverySeconds": 420,
+        "distanceKm": 20.115909462019527,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261329,
+        "continuity": 61.57894736842104,
+        "weightedGapSeconds": 17112.77927684421,
+        "recoverySeconds": 470,
+        "distanceKm": 20.883366751965063,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261346,
+        "continuity": 69.16666666666666,
+        "weightedGapSeconds": 8688.519571034742,
+        "recoverySeconds": 325,
+        "distanceKm": 25.21342624267317,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261363,
+        "continuity": 54.852941176470644,
+        "weightedGapSeconds": 17465.0196914889,
+        "recoverySeconds": 415,
+        "distanceKm": 40.35431009141795,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261380,
+        "continuity": 72.9861111111111,
+        "weightedGapSeconds": 5573.803265555524,
+        "recoverySeconds": 410,
+        "distanceKm": 23.247704614108393,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261397,
+        "continuity": 62.88888888888898,
+        "weightedGapSeconds": 14388.181818181825,
+        "recoverySeconds": 220,
+        "distanceKm": 27.960859202601153,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261414,
+        "continuity": 60.229166666666664,
+        "weightedGapSeconds": 16092.508151258677,
+        "recoverySeconds": 275,
+        "distanceKm": 33.39056710732661,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261431,
+        "continuity": 84.2307692307693,
+        "weightedGapSeconds": 2715.9267688805535,
+        "recoverySeconds": 265,
+        "distanceKm": 19.33874855396939,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261448,
+        "continuity": 65.87719298245615,
+        "weightedGapSeconds": 22655.880970481518,
+        "recoverySeconds": 530,
+        "distanceKm": 24.0684969961436,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261465,
+        "continuity": 70.80357142857146,
+        "weightedGapSeconds": 8159.212762671081,
+        "recoverySeconds": 350,
+        "distanceKm": 29.328658247711203,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261482,
+        "continuity": 78.28431372549024,
+        "weightedGapSeconds": 5100.727995135284,
+        "recoverySeconds": 200,
+        "distanceKm": 18.996843228041683,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261499,
+        "continuity": 61.75595238095255,
+        "weightedGapSeconds": 10348.588948267194,
+        "recoverySeconds": 315,
+        "distanceKm": 33.0496627779696,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261516,
+        "continuity": 62.529761904761905,
+        "weightedGapSeconds": 10262.048215332212,
+        "recoverySeconds": 680,
+        "distanceKm": 26.429703846616572,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261533,
+        "continuity": 72.55952380952378,
+        "weightedGapSeconds": 5019.558258538702,
+        "recoverySeconds": 245,
+        "distanceKm": 22.60740435828924,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261550,
+        "continuity": 66.75925925925934,
+        "weightedGapSeconds": 19170.7150453946,
+        "recoverySeconds": 630,
+        "distanceKm": 22.269681582076505,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261567,
+        "continuity": 77.96296296296302,
+        "weightedGapSeconds": 3097.593428942864,
+        "recoverySeconds": 340,
+        "distanceKm": 23.136770064445667,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261584,
+        "continuity": 79.19270833333333,
+        "weightedGapSeconds": 4401.420642168367,
+        "recoverySeconds": 315,
+        "distanceKm": 25.119987159726065,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261601,
+        "continuity": 66.88725490196077,
+        "weightedGapSeconds": 8296.878005813682,
+        "recoverySeconds": 365,
+        "distanceKm": 29.44308306009613,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261618,
+        "continuity": 71.21031746031757,
+        "weightedGapSeconds": 18190.165508306276,
+        "recoverySeconds": 365,
+        "distanceKm": 23.11041379529013,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261635,
+        "continuity": 66.8888888888888,
+        "weightedGapSeconds": 8176.230731122972,
+        "recoverySeconds": 355,
+        "distanceKm": 24.7782389559623,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261652,
+        "continuity": 67.08333333333333,
+        "weightedGapSeconds": 20716.821659665828,
+        "recoverySeconds": 135,
+        "distanceKm": 23.042063469933673,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261669,
+        "continuity": 69.14351851851846,
+        "weightedGapSeconds": 8876.987463787265,
+        "recoverySeconds": 305,
+        "distanceKm": 31.966162985571138,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261686,
+        "continuity": 70.81018518518515,
+        "weightedGapSeconds": 14386.630934250696,
+        "recoverySeconds": 250,
+        "distanceKm": 19.11312064586091,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261703,
+        "continuity": 76.85897435897428,
+        "weightedGapSeconds": 9678.313541369589,
+        "recoverySeconds": 795,
+        "distanceKm": 27.35135777322202,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261720,
+        "continuity": 64.49561403508773,
+        "weightedGapSeconds": 11866.509397465281,
+        "recoverySeconds": 360,
+        "distanceKm": 25.967787459344773,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261737,
+        "continuity": 59.92647058823536,
+        "weightedGapSeconds": 15597.32465113431,
+        "recoverySeconds": 335,
+        "distanceKm": 26.46072659729754,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261754,
+        "continuity": 62.40079365079379,
+        "weightedGapSeconds": 21634.58309101754,
+        "recoverySeconds": 455,
+        "distanceKm": 27.925755161841597,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261771,
+        "continuity": 71.21794871794872,
+        "weightedGapSeconds": 4988.276980382554,
+        "recoverySeconds": 385,
+        "distanceKm": 32.4158694857501,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261788,
+        "continuity": 68.515625,
+        "weightedGapSeconds": 8105.671668316677,
+        "recoverySeconds": 135,
+        "distanceKm": 24.85191338013053,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261805,
+        "continuity": 73.61111111111117,
+        "weightedGapSeconds": 5443.832108149679,
+        "recoverySeconds": 470,
+        "distanceKm": 21.848730963922147,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261822,
+        "continuity": 65.50925925925927,
+        "weightedGapSeconds": 15326.810270061676,
+        "recoverySeconds": 80,
+        "distanceKm": 21.61022915753205,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261839,
+        "continuity": 72.08333333333333,
+        "weightedGapSeconds": 7498.844145388666,
+        "recoverySeconds": 195,
+        "distanceKm": 28.593098786891332,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261856,
+        "continuity": 65.8333333333334,
+        "weightedGapSeconds": 21669.782238653872,
+        "recoverySeconds": 480,
+        "distanceKm": 23.121510237033995,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261873,
+        "continuity": 54.09313725490194,
+        "weightedGapSeconds": 15079.773124109597,
+        "recoverySeconds": 390,
+        "distanceKm": 33.836745733373505,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261890,
+        "continuity": 53.88888888888889,
+        "weightedGapSeconds": 26911.84310331836,
+        "recoverySeconds": 250,
+        "distanceKm": 27.791611524807863,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261907,
+        "continuity": 68.2407407407407,
+        "weightedGapSeconds": 11364.722213244673,
+        "recoverySeconds": 390,
+        "distanceKm": 24.878313963843205,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261924,
+        "continuity": 50.68181818181824,
+        "weightedGapSeconds": 28287.158079409674,
+        "recoverySeconds": 270,
+        "distanceKm": 29.475677619248724,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261941,
+        "continuity": 84.5,
+        "weightedGapSeconds": 2100.0790907469864,
+        "recoverySeconds": 215,
+        "distanceKm": 13.39445168585248,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261958,
+        "continuity": 75.44642857142854,
+        "weightedGapSeconds": 9347.295188355758,
+        "recoverySeconds": 280,
+        "distanceKm": 31.522154383626635,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261975,
+        "continuity": 72.15686274509805,
+        "weightedGapSeconds": 16995.833358635282,
+        "recoverySeconds": 110,
+        "distanceKm": 14.140295901467095,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261992,
+        "continuity": 77.99479166666667,
+        "weightedGapSeconds": 10294.346675378554,
+        "recoverySeconds": 290,
+        "distanceKm": 28.58873758019911,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262009,
+        "continuity": 64.56439393939391,
+        "weightedGapSeconds": 20061.533275421152,
+        "recoverySeconds": 405,
+        "distanceKm": 20.47106087474748,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262026,
+        "continuity": 70.24999999999997,
+        "weightedGapSeconds": 6866.4476965153035,
+        "recoverySeconds": 580,
+        "distanceKm": 30.133607438835906,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262043,
+        "continuity": 71.70138888888904,
+        "weightedGapSeconds": 7012.538152407819,
+        "recoverySeconds": 165,
+        "distanceKm": 28.1164769987458,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262060,
+        "continuity": 80.26515151515183,
+        "weightedGapSeconds": 5570.376268185154,
+        "recoverySeconds": 275,
+        "distanceKm": 28.56851095251532,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262077,
+        "continuity": 58.94736842105266,
+        "weightedGapSeconds": 17436.24380397356,
+        "recoverySeconds": 535,
+        "distanceKm": 32.34312377530598,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262094,
+        "continuity": 67.08333333333317,
+        "weightedGapSeconds": 9146.60069705486,
+        "recoverySeconds": 300,
+        "distanceKm": 22.27844546193972,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262111,
+        "continuity": 52.67857142857148,
+        "weightedGapSeconds": 27135.134236341964,
+        "recoverySeconds": 205,
+        "distanceKm": 31.65348675834119,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262128,
+        "continuity": 58.9102564102565,
+        "weightedGapSeconds": 9364.609770059255,
+        "recoverySeconds": 420,
+        "distanceKm": 34.361472848002414,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262145,
+        "continuity": 79.375,
+        "weightedGapSeconds": 5527.500951685274,
+        "recoverySeconds": 260,
+        "distanceKm": 26.56478947487674,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262162,
+        "continuity": 74.73958333333333,
+        "weightedGapSeconds": 4530.16337790749,
+        "recoverySeconds": 290,
+        "distanceKm": 27.124391190358974,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262179,
+        "continuity": 59.98106060606064,
+        "weightedGapSeconds": 26092.857888527422,
+        "recoverySeconds": 745,
+        "distanceKm": 29.64000910492904,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262196,
+        "continuity": 74.77941176470577,
+        "weightedGapSeconds": 6671.9338178770495,
+        "recoverySeconds": 435,
+        "distanceKm": 18.185345390541208,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262213,
+        "continuity": 78.09027777777783,
+        "weightedGapSeconds": 6917.319567079495,
+        "recoverySeconds": 380,
+        "distanceKm": 27.225813102171976,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262230,
+        "continuity": 62.85714285714285,
+        "weightedGapSeconds": 9771.416034009015,
+        "recoverySeconds": 360,
+        "distanceKm": 31.872949502793947,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262247,
+        "continuity": 52.270833333333336,
+        "weightedGapSeconds": 25403.907109408596,
+        "recoverySeconds": 490,
+        "distanceKm": 31.378522451044766,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262264,
+        "continuity": 82.18750000000006,
+        "weightedGapSeconds": 2318.944601393444,
+        "recoverySeconds": 235,
+        "distanceKm": 18.93844202802057,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262281,
+        "continuity": 76.54411764705881,
+        "weightedGapSeconds": 7105.367257393457,
+        "recoverySeconds": 115,
+        "distanceKm": 13.367348346509797,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262298,
+        "continuity": 54.76851851851856,
+        "weightedGapSeconds": 17871.420623093833,
+        "recoverySeconds": 370,
+        "distanceKm": 31.471882276608174,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262315,
+        "continuity": 71.54166666666667,
+        "weightedGapSeconds": 11787.80342242879,
+        "recoverySeconds": 180,
+        "distanceKm": 35.22024473582771,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262332,
+        "continuity": 61.096491228070164,
+        "weightedGapSeconds": 16645.335913819978,
+        "recoverySeconds": 270,
+        "distanceKm": 26.153926207144178,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262349,
+        "continuity": 58.970588235294,
+        "weightedGapSeconds": 21545.464345551594,
+        "recoverySeconds": 610,
+        "distanceKm": 37.016157899535685,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262366,
+        "continuity": 68.3796296296296,
+        "weightedGapSeconds": 9698.598574785632,
+        "recoverySeconds": 215,
+        "distanceKm": 33.590306989282944,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262383,
+        "continuity": 64.313725490196,
+        "weightedGapSeconds": 9939.228411722544,
+        "recoverySeconds": 310,
+        "distanceKm": 23.627719771804657,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262400,
+        "continuity": 65.71428571428574,
+        "weightedGapSeconds": 10273.182893919513,
+        "recoverySeconds": 360,
+        "distanceKm": 30.852810238625505,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262417,
+        "continuity": 64.42307692307676,
+        "weightedGapSeconds": 8386.370278782168,
+        "recoverySeconds": 260,
+        "distanceKm": 28.409234383305222,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262434,
+        "continuity": 78.20512820512823,
+        "weightedGapSeconds": 5086.380257231359,
+        "recoverySeconds": 190,
+        "distanceKm": 16.334946880219015,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262451,
+        "continuity": 58.697916666666664,
+        "weightedGapSeconds": 13112.1889583924,
+        "recoverySeconds": 315,
+        "distanceKm": 37.02422571097098,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262468,
+        "continuity": 81.92982456140355,
+        "weightedGapSeconds": 5459.376807581716,
+        "recoverySeconds": 140,
+        "distanceKm": 28.636456110972436,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262485,
+        "continuity": 62.88690476190476,
+        "weightedGapSeconds": 9391.558094690785,
+        "recoverySeconds": 90,
+        "distanceKm": 36.52997532432335,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262502,
+        "continuity": 52.78409090909091,
+        "weightedGapSeconds": 30669.874365023403,
+        "recoverySeconds": 390,
+        "distanceKm": 26.435939755750507,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262519,
+        "continuity": 73.24074074074086,
+        "weightedGapSeconds": 15831.40468359666,
+        "recoverySeconds": 120,
+        "distanceKm": 30.117638250709692,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262536,
+        "continuity": 58.137254901960745,
+        "weightedGapSeconds": 17640.028899716828,
+        "recoverySeconds": 850,
+        "distanceKm": 32.052736276919134,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262553,
+        "continuity": 70.92592592592594,
+        "weightedGapSeconds": 12444.896857776152,
+        "recoverySeconds": 165,
+        "distanceKm": 13.43747427798468,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262570,
+        "continuity": 65.45833333333333,
+        "weightedGapSeconds": 17366.836678227046,
+        "recoverySeconds": 105,
+        "distanceKm": 14.42302595514967,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262587,
+        "continuity": 74.89583333333337,
+        "weightedGapSeconds": 5338.840234742897,
+        "recoverySeconds": 420,
+        "distanceKm": 27.701163802849017,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262604,
+        "continuity": 51.375,
+        "weightedGapSeconds": 24703.797743199775,
+        "recoverySeconds": 380,
+        "distanceKm": 24.645021520339853,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262621,
+        "continuity": 71.73611111111101,
+        "weightedGapSeconds": 9017.034401367537,
+        "recoverySeconds": 125,
+        "distanceKm": 23.735946341620085,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262638,
+        "continuity": 69.19117647058815,
+        "weightedGapSeconds": 12041.065013235451,
+        "recoverySeconds": 750,
+        "distanceKm": 35.56921011716305,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262655,
+        "continuity": 72.39583333333333,
+        "weightedGapSeconds": 8558.990280181604,
+        "recoverySeconds": 410,
+        "distanceKm": 29.518958059474954,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262672,
+        "continuity": 59.39102564102565,
+        "weightedGapSeconds": 11461.045465638359,
+        "recoverySeconds": 0,
+        "distanceKm": 28.102978349371035,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262689,
+        "continuity": 64.65277777777784,
+        "weightedGapSeconds": 11354.376042722646,
+        "recoverySeconds": 310,
+        "distanceKm": 19.603729821621812,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262706,
+        "continuity": 66.11842105263149,
+        "weightedGapSeconds": 10867.018951361952,
+        "recoverySeconds": 360,
+        "distanceKm": 26.560684473893875,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262723,
+        "continuity": 70.3125,
+        "weightedGapSeconds": 12973.627628559198,
+        "recoverySeconds": 235,
+        "distanceKm": 28.43515064661557,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262740,
+        "continuity": 69.84375,
+        "weightedGapSeconds": 5642.403597845692,
+        "recoverySeconds": 215,
+        "distanceKm": 27.358849450624948,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262757,
+        "continuity": 63.88888888888903,
+        "weightedGapSeconds": 26065.518341892883,
+        "recoverySeconds": 345,
+        "distanceKm": 17.689652205729463,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262774,
+        "continuity": 65.08928571428574,
+        "weightedGapSeconds": 12956.652954764464,
+        "recoverySeconds": 290,
+        "distanceKm": 28.52733735316019,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262791,
+        "continuity": 84.88095238095232,
+        "weightedGapSeconds": 2743.2798763201276,
+        "recoverySeconds": 160,
+        "distanceKm": 33.62816214208778,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262808,
+        "continuity": 67.97619047619048,
+        "weightedGapSeconds": 8957.856906526322,
+        "recoverySeconds": 345,
+        "distanceKm": 25.51133639922065,
+        "reserveViolations": 0
+      }
+    ],
+    "rl": [
+      {
+        "seed": 20261125,
+        "continuity": 64.54545454545465,
+        "weightedGapSeconds": 6600.748881708278,
+        "recoverySeconds": 400,
+        "distanceKm": 46.17049730063205,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261142,
+        "continuity": 71.8125,
+        "weightedGapSeconds": 8118.0376981499,
+        "recoverySeconds": 165,
+        "distanceKm": 25.3809815899047,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261159,
+        "continuity": 71.69444444444444,
+        "weightedGapSeconds": 7679.919870613615,
+        "recoverySeconds": 580,
+        "distanceKm": 28.176758172773784,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261176,
+        "continuity": 60.963541666666664,
+        "weightedGapSeconds": 11437.765870478053,
+        "recoverySeconds": 530,
+        "distanceKm": 38.8786228700993,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261193,
+        "continuity": 85.00000000000011,
+        "weightedGapSeconds": 2344.860230639498,
+        "recoverySeconds": 405,
+        "distanceKm": 20.203157732958687,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261210,
+        "continuity": 65.17543859649116,
+        "weightedGapSeconds": 9660.056185407913,
+        "recoverySeconds": 330,
+        "distanceKm": 30.723734959844677,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261227,
+        "continuity": 64.75378787878786,
+        "weightedGapSeconds": 16496.84015030727,
+        "recoverySeconds": 255,
+        "distanceKm": 33.01100258540132,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261244,
+        "continuity": 83.17129629629633,
+        "weightedGapSeconds": 2168.8374414529208,
+        "recoverySeconds": 205,
+        "distanceKm": 15.141964437501061,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261261,
+        "continuity": 68.42105263157902,
+        "weightedGapSeconds": 11932.737218326925,
+        "recoverySeconds": 580,
+        "distanceKm": 24.34980546268282,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261278,
+        "continuity": 61.15740740740731,
+        "weightedGapSeconds": 23027.07993089928,
+        "recoverySeconds": 470,
+        "distanceKm": 21.87404125991921,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261295,
+        "continuity": 87.14743589743608,
+        "weightedGapSeconds": 1817.5306365406439,
+        "recoverySeconds": 465,
+        "distanceKm": 17.323735561057607,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261312,
+        "continuity": 78.52272727272718,
+        "weightedGapSeconds": 8600.531262214981,
+        "recoverySeconds": 510,
+        "distanceKm": 21.648974624524037,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261329,
+        "continuity": 71.16228070175424,
+        "weightedGapSeconds": 7031.363654209679,
+        "recoverySeconds": 350,
+        "distanceKm": 32.371962456438204,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261346,
+        "continuity": 67.08333333333343,
+        "weightedGapSeconds": 6349.280156921024,
+        "recoverySeconds": 445,
+        "distanceKm": 34.5781224750922,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261363,
+        "continuity": 66.12745098039221,
+        "weightedGapSeconds": 12804.915593965889,
+        "recoverySeconds": 220,
+        "distanceKm": 34.42283827445399,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261380,
+        "continuity": 76.527777777778,
+        "weightedGapSeconds": 8007.474898698027,
+        "recoverySeconds": 365,
+        "distanceKm": 28.76172001380887,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261397,
+        "continuity": 71.97222222222229,
+        "weightedGapSeconds": 4777.529411764707,
+        "recoverySeconds": 205,
+        "distanceKm": 36.754985613104864,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261414,
+        "continuity": 67.75,
+        "weightedGapSeconds": 9886.457615424246,
+        "recoverySeconds": 180,
+        "distanceKm": 29.642639326512644,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261431,
+        "continuity": 88.07692307692315,
+        "weightedGapSeconds": 1606.2171662089804,
+        "recoverySeconds": 280,
+        "distanceKm": 22.520317457814965,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261448,
+        "continuity": 69.05701754385954,
+        "weightedGapSeconds": 10223.685320820818,
+        "recoverySeconds": 455,
+        "distanceKm": 34.550527849002144,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261465,
+        "continuity": 75.44642857142864,
+        "weightedGapSeconds": 3996.141168472832,
+        "recoverySeconds": 405,
+        "distanceKm": 36.95422858131099,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261482,
+        "continuity": 79.09313725490202,
+        "weightedGapSeconds": 3873.934788440025,
+        "recoverySeconds": 270,
+        "distanceKm": 21.497290376919292,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261499,
+        "continuity": 69.01785714285715,
+        "weightedGapSeconds": 7311.1696176260075,
+        "recoverySeconds": 170,
+        "distanceKm": 30.25260118700335,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261516,
+        "continuity": 70.68452380952392,
+        "weightedGapSeconds": 6368.123399079433,
+        "recoverySeconds": 580,
+        "distanceKm": 37.159539422700206,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261533,
+        "continuity": 74.16666666666664,
+        "weightedGapSeconds": 6654.464546491806,
+        "recoverySeconds": 695,
+        "distanceKm": 24.59292710942338,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261550,
+        "continuity": 79.4675925925927,
+        "weightedGapSeconds": 4668.344141980636,
+        "recoverySeconds": 180,
+        "distanceKm": 16.253729381352514,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261567,
+        "continuity": 81.2962962962962,
+        "weightedGapSeconds": 1630.8022378272526,
+        "recoverySeconds": 320,
+        "distanceKm": 33.96721451046269,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261584,
+        "continuity": 79.84375,
+        "weightedGapSeconds": 4604.475133332475,
+        "recoverySeconds": 335,
+        "distanceKm": 27.44979019610979,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261601,
+        "continuity": 77.2303921568627,
+        "weightedGapSeconds": 4968.915152287257,
+        "recoverySeconds": 445,
+        "distanceKm": 27.212297552221294,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261618,
+        "continuity": 65.87301587301592,
+        "weightedGapSeconds": 13208.870990520978,
+        "recoverySeconds": 345,
+        "distanceKm": 37.86501013189032,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261635,
+        "continuity": 74.16666666666687,
+        "weightedGapSeconds": 10177.609463191362,
+        "recoverySeconds": 80,
+        "distanceKm": 29.67595540920404,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261652,
+        "continuity": 73.93333333333334,
+        "weightedGapSeconds": 9663.875377508484,
+        "recoverySeconds": 145,
+        "distanceKm": 23.917528830489935,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261669,
+        "continuity": 74.37499999999996,
+        "weightedGapSeconds": 6037.585893423461,
+        "recoverySeconds": 265,
+        "distanceKm": 26.67898146185851,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261686,
+        "continuity": 77.10648148148135,
+        "weightedGapSeconds": 7847.337953944695,
+        "recoverySeconds": 320,
+        "distanceKm": 23.839471135073524,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261703,
+        "continuity": 76.5064102564102,
+        "weightedGapSeconds": 4776.855506161367,
+        "recoverySeconds": 630,
+        "distanceKm": 23.627649449272955,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261720,
+        "continuity": 71.07456140350858,
+        "weightedGapSeconds": 7913.896833132766,
+        "recoverySeconds": 325,
+        "distanceKm": 25.399545628767207,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261737,
+        "continuity": 71.83823529411735,
+        "weightedGapSeconds": 18792.65551232631,
+        "recoverySeconds": 200,
+        "distanceKm": 28.819498666202907,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261754,
+        "continuity": 75.7341269841271,
+        "weightedGapSeconds": 6862.674285504248,
+        "recoverySeconds": 465,
+        "distanceKm": 31.06569272248962,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261771,
+        "continuity": 69.13461538461539,
+        "weightedGapSeconds": 8120.923870099598,
+        "recoverySeconds": 330,
+        "distanceKm": 31.630818149653674,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261788,
+        "continuity": 71.92708333333333,
+        "weightedGapSeconds": 9365.903625176019,
+        "recoverySeconds": 115,
+        "distanceKm": 29.71102820096003,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261805,
+        "continuity": 70.3888888888889,
+        "weightedGapSeconds": 7112.59924651119,
+        "recoverySeconds": 505,
+        "distanceKm": 28.581930512324774,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261822,
+        "continuity": 65.7175925925925,
+        "weightedGapSeconds": 8559.02969117873,
+        "recoverySeconds": 385,
+        "distanceKm": 31.930838629081933,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261839,
+        "continuity": 85.9375,
+        "weightedGapSeconds": 4513.654015023244,
+        "recoverySeconds": 265,
+        "distanceKm": 23.51852308380767,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261856,
+        "continuity": 62.556818181818244,
+        "weightedGapSeconds": 23781.97437492875,
+        "recoverySeconds": 35,
+        "distanceKm": 33.1341472546283,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261873,
+        "continuity": 62.990196078431325,
+        "weightedGapSeconds": 7303.127044838796,
+        "recoverySeconds": 370,
+        "distanceKm": 41.84743973903863,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261890,
+        "continuity": 55.97222222222223,
+        "weightedGapSeconds": 29392.991189695374,
+        "recoverySeconds": 215,
+        "distanceKm": 33.01261344620354,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261907,
+        "continuity": 68.28703703703707,
+        "weightedGapSeconds": 11261.49616369435,
+        "recoverySeconds": 295,
+        "distanceKm": 23.98603807067089,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261924,
+        "continuity": 56.11742424242431,
+        "weightedGapSeconds": 48198.466596504586,
+        "recoverySeconds": 320,
+        "distanceKm": 30.277407031039637,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261941,
+        "continuity": 85.04166666666667,
+        "weightedGapSeconds": 1110.5920244339552,
+        "recoverySeconds": 270,
+        "distanceKm": 22.210108118473666,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261958,
+        "continuity": 68.15476190476194,
+        "weightedGapSeconds": 9478.906994534791,
+        "recoverySeconds": 470,
+        "distanceKm": 35.61324913179133,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261975,
+        "continuity": 82.3529411764704,
+        "weightedGapSeconds": 5342.1007301025675,
+        "recoverySeconds": 230,
+        "distanceKm": 22.406029414790442,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20261992,
+        "continuity": 83.38541666666667,
+        "weightedGapSeconds": 5550.539781863154,
+        "recoverySeconds": 400,
+        "distanceKm": 29.32745330562815,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262009,
+        "continuity": 67.02651515151496,
+        "weightedGapSeconds": 14167.584424082796,
+        "recoverySeconds": 165,
+        "distanceKm": 28.705082384321518,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262026,
+        "continuity": 66.58333333333326,
+        "weightedGapSeconds": 6782.313892482924,
+        "recoverySeconds": 455,
+        "distanceKm": 38.527511389394654,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262043,
+        "continuity": 73.02083333333321,
+        "weightedGapSeconds": 3503.7070685696326,
+        "recoverySeconds": 420,
+        "distanceKm": 33.223771111008055,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262060,
+        "continuity": 80.94696969697002,
+        "weightedGapSeconds": 2656.7228133142426,
+        "recoverySeconds": 360,
+        "distanceKm": 36.144159084143915,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262077,
+        "continuity": 60.59210526315789,
+        "weightedGapSeconds": 11492.22845571269,
+        "recoverySeconds": 365,
+        "distanceKm": 34.815202094136815,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262094,
+        "continuity": 80.269607843137,
+        "weightedGapSeconds": 6585.763146164676,
+        "recoverySeconds": 290,
+        "distanceKm": 24.89849680376372,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262111,
+        "continuity": 64.0079365079366,
+        "weightedGapSeconds": 11995.498894853405,
+        "recoverySeconds": 295,
+        "distanceKm": 28.593537770565554,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262128,
+        "continuity": 64.64743589743578,
+        "weightedGapSeconds": 7088.828537828211,
+        "recoverySeconds": 560,
+        "distanceKm": 36.495791295261114,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262145,
+        "continuity": 80.625,
+        "weightedGapSeconds": 2902.6024191470165,
+        "recoverySeconds": 395,
+        "distanceKm": 32.126568996404686,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262162,
+        "continuity": 77.890625,
+        "weightedGapSeconds": 4593.5418423810515,
+        "recoverySeconds": 355,
+        "distanceKm": 27.718979475971732,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262179,
+        "continuity": 57.80303030303032,
+        "weightedGapSeconds": 29750.953490013802,
+        "recoverySeconds": 410,
+        "distanceKm": 34.76887595748359,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262196,
+        "continuity": 84.55882352941151,
+        "weightedGapSeconds": 1832.328658979454,
+        "recoverySeconds": 300,
+        "distanceKm": 24.500631915433683,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262213,
+        "continuity": 83.43749999999996,
+        "weightedGapSeconds": 2082.025669545167,
+        "recoverySeconds": 265,
+        "distanceKm": 34.54443420496923,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262230,
+        "continuity": 69.64285714285715,
+        "weightedGapSeconds": 8748.074514955446,
+        "recoverySeconds": 550,
+        "distanceKm": 35.53290958077617,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262247,
+        "continuity": 56,
+        "weightedGapSeconds": 21923.290189151317,
+        "recoverySeconds": 665,
+        "distanceKm": 43.9423660426754,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262264,
+        "continuity": 79.4791666666668,
+        "weightedGapSeconds": 5977.337352569253,
+        "recoverySeconds": 505,
+        "distanceKm": 22.86253593408668,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262281,
+        "continuity": 74.58333333333341,
+        "weightedGapSeconds": 9540.400734400735,
+        "recoverySeconds": 175,
+        "distanceKm": 17.32597842064152,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262298,
+        "continuity": 58.65740740740737,
+        "weightedGapSeconds": 14798.712607454054,
+        "recoverySeconds": 555,
+        "distanceKm": 34.98689491820184,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262315,
+        "continuity": 73.77083333333333,
+        "weightedGapSeconds": 7885.467523974663,
+        "recoverySeconds": 220,
+        "distanceKm": 41.6126120093715,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262332,
+        "continuity": 69.42982456140355,
+        "weightedGapSeconds": 11574.160905473816,
+        "recoverySeconds": 75,
+        "distanceKm": 21.58617513971645,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262349,
+        "continuity": 62.23039215686266,
+        "weightedGapSeconds": 17871.06551045017,
+        "recoverySeconds": 665,
+        "distanceKm": 44.47161738663225,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262366,
+        "continuity": 72.98611111111101,
+        "weightedGapSeconds": 7604.2392389495,
+        "recoverySeconds": 290,
+        "distanceKm": 34.33007319959533,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262383,
+        "continuity": 73.16176470588236,
+        "weightedGapSeconds": 6194.766500777327,
+        "recoverySeconds": 315,
+        "distanceKm": 24.72661405563881,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262400,
+        "continuity": 70.80357142857136,
+        "weightedGapSeconds": 6596.495770714106,
+        "recoverySeconds": 435,
+        "distanceKm": 32.808678502804064,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262417,
+        "continuity": 63.91025641025629,
+        "weightedGapSeconds": 8036.7235903297,
+        "recoverySeconds": 505,
+        "distanceKm": 38.06885177318184,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262434,
+        "continuity": 79.77564102564111,
+        "weightedGapSeconds": 2258.359967969736,
+        "recoverySeconds": 265,
+        "distanceKm": 19.918535362040934,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262451,
+        "continuity": 62.916666666666664,
+        "weightedGapSeconds": 37115.17501918325,
+        "recoverySeconds": 260,
+        "distanceKm": 29.309240191507516,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262468,
+        "continuity": 87.32456140350864,
+        "weightedGapSeconds": 1555.0179679224473,
+        "recoverySeconds": 280,
+        "distanceKm": 25.924011286884834,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262485,
+        "continuity": 71.30952380952378,
+        "weightedGapSeconds": 8967.119971094602,
+        "recoverySeconds": 320,
+        "distanceKm": 42.25459115086739,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262502,
+        "continuity": 61.09848484848473,
+        "weightedGapSeconds": 29667.994982064483,
+        "recoverySeconds": 460,
+        "distanceKm": 18.82432615203302,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262519,
+        "continuity": 73.51851851851832,
+        "weightedGapSeconds": 14735.001985267596,
+        "recoverySeconds": 305,
+        "distanceKm": 29.845248893309638,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262536,
+        "continuity": 72.1813725490195,
+        "weightedGapSeconds": 9641.598587793376,
+        "recoverySeconds": 590,
+        "distanceKm": 31.51566825944488,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262553,
+        "continuity": 79.58333333333304,
+        "weightedGapSeconds": 10659.999566001203,
+        "recoverySeconds": 180,
+        "distanceKm": 23.033326794423033,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262570,
+        "continuity": 67.79166666666667,
+        "weightedGapSeconds": 14021.83871661771,
+        "recoverySeconds": 350,
+        "distanceKm": 23.342542594526773,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262587,
+        "continuity": 77.11805555555561,
+        "weightedGapSeconds": 4088.978273816591,
+        "recoverySeconds": 345,
+        "distanceKm": 35.24964181581295,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262604,
+        "continuity": 51.9375,
+        "weightedGapSeconds": 29276.360649053302,
+        "recoverySeconds": 360,
+        "distanceKm": 22.590307276881408,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262621,
+        "continuity": 79.95370370370387,
+        "weightedGapSeconds": 2567.003496053175,
+        "recoverySeconds": 245,
+        "distanceKm": 29.763364849618547,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262638,
+        "continuity": 73.18627450980392,
+        "weightedGapSeconds": 5133.986579917686,
+        "recoverySeconds": 430,
+        "distanceKm": 31.02596006698753,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262655,
+        "continuity": 75.10416666666667,
+        "weightedGapSeconds": 4845.69049951388,
+        "recoverySeconds": 400,
+        "distanceKm": 33.72800751054986,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262672,
+        "continuity": 74.42307692307675,
+        "weightedGapSeconds": 9640.282401668368,
+        "recoverySeconds": 660,
+        "distanceKm": 29.515242679735238,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262689,
+        "continuity": 61.89814814814804,
+        "weightedGapSeconds": 19591.996678424515,
+        "recoverySeconds": 460,
+        "distanceKm": 21.114622948399052,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262706,
+        "continuity": 67.19298245614031,
+        "weightedGapSeconds": 13315.784413173724,
+        "recoverySeconds": 515,
+        "distanceKm": 32.641981116705765,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262723,
+        "continuity": 77.23958333333333,
+        "weightedGapSeconds": 4661.703171450812,
+        "recoverySeconds": 515,
+        "distanceKm": 37.80133950640642,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262740,
+        "continuity": 80.28645833333333,
+        "weightedGapSeconds": 3874.704069974512,
+        "recoverySeconds": 535,
+        "distanceKm": 26.91920326691326,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262757,
+        "continuity": 73.09523809523793,
+        "weightedGapSeconds": 7181.705895026142,
+        "recoverySeconds": 295,
+        "distanceKm": 21.333414152545984,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262774,
+        "continuity": 81.78571428571414,
+        "weightedGapSeconds": 3187.242312052512,
+        "recoverySeconds": 215,
+        "distanceKm": 33.734714148718965,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262791,
+        "continuity": 76.60714285714292,
+        "weightedGapSeconds": 4168.311954471516,
+        "recoverySeconds": 120,
+        "distanceKm": 31.913382845073656,
+        "reserveViolations": 0
+      },
+      {
+        "seed": 20262808,
+        "continuity": 81.16071428571422,
+        "weightedGapSeconds": 4665.17380370539,
+        "recoverySeconds": 275,
+        "distanceKm": 24.48277410016201,
+        "reserveViolations": 0
+      }
+    ]
+  }
+}

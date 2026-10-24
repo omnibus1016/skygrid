@@ -220,15 +220,22 @@ export function moveAlongObstacleAwareRoute(
 ): { position: GeoPoint; distanceMoved: number; headingTarget: GeoPoint } {
   const path = aStarRoute(start, end, zones);
   let remaining = Math.max(0, distanceM);
-  let position = start;
+  // start/end may be richer Drone or Waypoint objects. Keep the movement
+  // result as coordinates only so spreading it into a Drone cannot overwrite
+  // identifiers or operational fields.
+  let position: GeoPoint = { lat: start.lat, lng: start.lng };
   let distanceMoved = 0;
-  let headingTarget = path[1] ?? end;
+  const initialHeadingTarget = path[1] ?? end;
+  let headingTarget: GeoPoint = {
+    lat: initialHeadingTarget.lat,
+    lng: initialHeadingTarget.lng,
+  };
   for (let index = 1; index < path.length && remaining > 0; index += 1) {
     const target = path[index];
     const legDistance = haversineMeters(position, target);
-    headingTarget = target;
+    headingTarget = { lat: target.lat, lng: target.lng };
     if (legDistance <= remaining) {
-      position = target;
+      position = { lat: target.lat, lng: target.lng };
       remaining -= legDistance;
       distanceMoved += legDistance;
       continue;

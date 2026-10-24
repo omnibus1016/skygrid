@@ -176,6 +176,103 @@ const EVALUATION_CONFIG: ScenarioConfig = {
   loadFactor: 0.8,
 };
 
+const PAPER_SCENARIO_CONFIG: ScenarioConfig = {
+  ...DEFAULT_CONFIG,
+  droneCount: 4,
+  waypointCount: 6,
+  durationSec: 3_600,
+  failureAt: 3_610,
+  failureDroneId: 'UAV-02',
+  simRate: 20,
+  randomSeed: 20_261_125,
+  layout: 'mixed',
+  mixedFleet: true,
+  noFlyZoneCount: 0,
+};
+
+const PAPER_GENERATOR_CENTER = { lat: 36.35, lng: 127.85 };
+const PAPER_KAIST_BASE = { lat: 36.3722, lng: 127.3604 };
+const PAPER_CAMPUS_SCALE = 0.25;
+
+function createPaperSnapshotMission(
+  policy: CandidateDqn,
+  snapshotTimeSec: number,
+): MissionState {
+  const generated = createMission(PAPER_SCENARIO_CONFIG, policy);
+  const waypoints = generated.waypoints.map((waypoint) => ({
+    ...waypoint,
+    lat:
+      PAPER_KAIST_BASE.lat +
+      (waypoint.lat - PAPER_GENERATOR_CENTER.lat) * PAPER_CAMPUS_SCALE,
+    lng:
+      PAPER_KAIST_BASE.lng +
+      (waypoint.lng - PAPER_GENERATOR_CENTER.lng) * PAPER_CAMPUS_SCALE,
+    assignedDrone: undefined,
+  }));
+  const drones = generated.drones.map((drone, index) => {
+    const offset = (index - (generated.drones.length - 1) / 2) * 0.000025;
+    return {
+      ...drone,
+      lat: PAPER_KAIST_BASE.lat + offset,
+      lng: PAPER_KAIST_BASE.lng + offset * 0.7,
+      homeLat: PAPER_KAIST_BASE.lat,
+      homeLng: PAPER_KAIST_BASE.lng,
+      route: [],
+      routeIndex: 0,
+    };
+  });
+  const planned = assignRoutes(
+    drones,
+    waypoints,
+    0,
+    'rl',
+    policy,
+    [],
+  );
+  let state: MissionState = {
+    ...generated,
+    base: {
+      id: 'BASE-01',
+      name: 'KAIST 시험기지',
+      ...PAPER_KAIST_BASE,
+      configured: true,
+    },
+    noFlyZones: [],
+    drones: planned.drones,
+    waypoints: planned.waypoints,
+    running: snapshotTimeSec > 0,
+  };
+
+  while (state.running && state.time < snapshotTimeSec) {
+    const delta = Math.min(10, snapshotTimeSec - state.time);
+    state = advanceMission(
+      state,
+      delta,
+      PAPER_SCENARIO_CONFIG,
+      policy,
+    );
+    if (state.time === 1_200) {
+      state = triggerFailure(
+        state,
+        'UAV-02',
+        'rl',
+        policy,
+        '20분 모의 이탈',
+      );
+    }
+    if (state.time === 2_400) {
+      state = triggerFailure(
+        state,
+        'UAV-04',
+        'rl',
+        policy,
+        '40분 모의 이탈',
+      );
+    }
+  }
+  return { ...state, running: false };
+}
+
 const PLANNER_LABEL: Record<PlannerKind, string> = {
   rl: '제약 인지 DQN',
   nearest: '최근접 우선',
@@ -437,6 +534,24 @@ export default function SkygridApp() {
   const fieldRecordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    const paperSnapshot = new URLSearchParams(window.location.search).get(
+      'paper',
+    );
+    if (paperSnapshot) {
+      const snapshotTimeSec =
+        paperSnapshot === 'first'
+          ? 1_200
+          : paperSnapshot === 'second'
+            ? 2_400
+            : 0;
+      setConfig(PAPER_SCENARIO_CONFIG);
+      setMission(
+        createPaperSnapshotMission(policyBundle.policy, snapshotTimeSec),
+      );
+      setSelectedDroneId('UAV-01');
+      setSelectedWaypointId('RP-01');
+      return;
+    }
     const saved = readSavedPolicyBundle();
     if (!saved) return;
     const timer = window.setTimeout(() => {

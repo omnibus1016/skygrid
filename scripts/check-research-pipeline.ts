@@ -1,5 +1,8 @@
 import { haversineMeters } from '../lib/skygrid/geo';
-import { obstacleAwareDistance } from '../lib/skygrid/pathfinding';
+import {
+  moveAlongObstacleAwareRoute,
+  obstacleAwareDistance,
+} from '../lib/skygrid/pathfinding';
 import { CandidateDqn } from '../lib/skygrid/rl-policy';
 import {
   createMission,
@@ -87,6 +90,17 @@ const zone = {
 assert(
   obstacleAwareDistance(start, end, [zone]) > haversineMeters(start, end),
   'NFZ 우회 거리가 직선 거리보다 길지 않습니다.',
+);
+const richStart = { ...start, id: 'UAV-01' };
+const richEnd = { ...end, id: 'RP-01' };
+const movement = moveAlongObstacleAwareRoute(
+  richStart,
+  richEnd,
+  haversineMeters(start, end) * 2,
+);
+assert(
+  !('id' in movement.position),
+  '이동 결과가 정찰지점 ID로 기체 ID를 덮어씁니다.',
 );
 
 console.log(
